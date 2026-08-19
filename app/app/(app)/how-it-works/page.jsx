@@ -162,6 +162,21 @@ export default async function HowItWorks() {
           </p>
         </Section>
 
+        <Section title="Curating the prompt library">
+          <p>
+            The <strong className="text-[var(--text-primary)]">Prompts</strong>{" "}
+            tab is the review gate between fanning out a keyword and the next
+            collection run. Every prompt shows its intent, facet, source, and
+            run count — filter to <em>Awaiting run</em> or <em>Fan-out</em> to
+            see exactly what a fan-out just added. Unmeasured prompts can be
+            edited (they're re-classified automatically) or deleted outright;
+            once a prompt has collected runs its text is locked because it
+            anchors historical data — toggle it <em>Inactive</em> to drop it
+            from future collection instead. <em>Export active prompts</em>{" "}
+            hands the runner exactly the curated set.
+          </p>
+        </Section>
+
         <Section title="PR attribution">
           <p>
             The <strong className="text-[var(--text-primary)]">Attribution</strong>{" "}

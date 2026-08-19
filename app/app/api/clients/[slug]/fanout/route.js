@@ -4,6 +4,7 @@ import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { q } from "@/lib/db";
 import { getClientBySlug, facetsForClient } from "@/lib/queries";
+import { matchRules } from "@/lib/classifyPrompt";
 
 // Template fallback — number-agnostic phrasing so plural and singular
 // keywords both read naturally. Used when ANTHROPIC_API_KEY is unset
@@ -87,16 +88,8 @@ export async function POST(req, { params }) {
     `SELECT pattern, keyword_category_id FROM keyword_rules
      WHERE client_id = $1 ORDER BY position`, [client.id]);
 
-  // Classify with the client's own rule sets (same first-match semantics
-  // as the pipeline; JS RegExp — python-only syntax is skipped).
-  const matchRules = (text, ruleset, key) => {
-    for (const r of ruleset) {
-      try {
-        if (new RegExp(r.pattern, "i").test(text)) return r[key];
-      } catch { /* skip non-portable pattern */ }
-    }
-    return null;
-  };
+  // Classify with the client's own rule sets (shared lib/classifyPrompt
+  // matcher — same first-match semantics as the pipeline).
   const categoryFor = (text) =>
     matchRules(text, rules, "keyword_category_id") ??
     rules[rules.length - 1]?.keyword_category_id ?? null;

@@ -327,6 +327,22 @@ export async function promptsForKeyword(clientId, kw, limit = 30) {
     [Number(clientId), `%${kw}%`, limit]);
 }
 
+// Full prompt library for the management view.
+export async function promptLibrary(clientId) {
+  return q(`
+    SELECT p.id, p.text, p.intent::text AS intent, p.source, p.active,
+           k.name AS category, f.name AS facet,
+           COUNT(r.id)::int AS runs,
+           MAX(r.run_date)::text AS last_run
+    FROM prompts p
+    LEFT JOIN keyword_categories k ON k.id = p.keyword_category_id
+    LEFT JOIN facets f ON f.id = p.facet_id
+    LEFT JOIN llm_runs r ON r.prompt_id = p.id
+    WHERE p.client_id = $1
+    GROUP BY p.id, p.text, p.intent, p.source, p.active, k.name, f.name
+    ORDER BY p.active DESC, COUNT(r.id) = 0 DESC, p.id DESC`, [Number(clientId)]);
+}
+
 // ---------- PR attribution -----------------------------------------
 
 // Every cited article by a media-list journalist, flagged "won" when its
