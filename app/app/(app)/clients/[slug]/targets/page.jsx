@@ -71,6 +71,20 @@ export default async function TargetsPage({ params, searchParams }) {
         <ClientTabs slug={client.slug} active="/targets" />
       </header>
 
+      {breakdown.length === 0 && !kw && !facetId ? (
+        <div className="card mx-auto max-w-xl p-10 text-center">
+          <h2 className="text-base font-semibold">No data to analyze yet</h2>
+          <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+            Citation targets are built from ingested engine responses. Run the
+            pipeline for {client.name}, then this view breaks every citation
+            down by search intent.
+          </p>
+          <pre className="mt-4 overflow-x-auto rounded-md bg-[var(--page)] p-3 text-left font-mono text-xs">
+{`python ingest.py --client ${client.slug} export.csv`}
+          </pre>
+        </div>
+      ) : (
+      <>
       {/* keyword search + fanout */}
       <FanoutSearch slug={client.slug} initialQ={kw ?? ""} facetId={facetId} />
 
@@ -189,10 +203,12 @@ export default async function TargetsPage({ params, searchParams }) {
       </div>
 
       <footer className="mt-8 text-center text-xs text-[var(--text-muted)]">
-        Status: <strong>Owned</strong> = the brand's own domain ·{" "}
+        All-time data · Status: <strong>Owned</strong> = the brand's own domain ·{" "}
         <strong>Engaged</strong> = outlet has a journalist on the media list ·{" "}
         <strong>Target</strong> = earned media cited by engines with no engagement yet
       </footer>
+      </>
+      )}
     </main>
   );
 }
