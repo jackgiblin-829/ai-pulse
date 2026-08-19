@@ -253,6 +253,135 @@ export async function mediaList(clientId) {
     ORDER BY o.domain_authority DESC NULLS LAST, j.name`, [Number(clientId)]);
 }
 
+// ---------- Citation targets (intent x facet) ---------------------
+
+export async function facetsForClient(clientId) {
+  return q(
+    `SELECT id, name, pattern FROM facets WHERE client_id = $1 ORDER BY position, id`,
+    [Number(clientId)]);
+}
+
+// Prompt-scoped filter fragment for the targets view.
+function promptFilter({ facetId, kw }, params) {
+  let sql = "";
+  if (facetId) sql += ` AND p.facet_id = ${Number(facetId)}`;
+  if (kw) {
+    params.push(`%${kw}%`);
+    sql += ` AND p.text ILIKE $${params.length}`;
+  }
+  return sql;
+}
+
+// Per-intent rollup: prompt/citation volume + target visibility.
+export async function intentBreakdown(clientId, targetBrandId, opts = {}) {
+  const params = [Number(clientId)];
+  return q(`
+    SELECT p.intent::text AS intent,
+           COUNT(DISTINCT p.id)::int AS prompts,
+           COUNT(DISTINCT u.id)::int AS citations,
+           ROUND(100.0 * COUNT(DISTINCT bm.run_id) / NULLIF(COUNT(DISTINCT r.id),0), 1)::float AS visibility
+    FROM prompts p
+    JOIN llm_runs r ON r.prompt_id = p.id
+    LEFT JOIN cited_urls u ON u.run_id = r.id
+    LEFT JOIN brand_mentions bm ON bm.run_id = r.id AND bm.brand_id = ${Number(targetBrandId)}
+    WHERE p.client_id = $1 AND p.intent IS NOT NULL${promptFilter(opts, params)}
+    GROUP BY p.intent ORDER BY citations DESC`, params);
+}
+
+// Top cited sources per intent, with target-status signals:
+// owned domain, engaged (outlet has a media-list journalist), or gap.
+export async function citationTargets(clientId, targetBrandId, opts = {}) {
+  const params = [Number(clientId)];
+  return q(`
+    SELECT p.intent::text AS intent, d.domain, d.media_type::text AS media_type,
+           o.name AS outlet, o.domain_authority::int AS da,
+           COUNT(u.id)::int AS citations, COUNT(DISTINCT u.url)::int AS unique_urls,
+           (d.owned_by_brand_id = ${Number(targetBrandId)}) AS is_owned,
+           EXISTS (
+             SELECT 1 FROM media_list_entries ml
+             JOIN journalists j2 ON j2.id = ml.journalist_id
+             WHERE ml.client_id = $1 AND j2.outlet_id = d.outlet_id
+           ) AS engaged
+    FROM cited_urls u
+    JOIN llm_runs r ON r.id = u.run_id
+    JOIN prompts p ON p.id = r.prompt_id
+    JOIN cited_domains d ON d.id = u.domain_id
+    LEFT JOIN media_outlets o ON o.id = d.outlet_id
+    WHERE r.client_id = $1 AND p.intent IS NOT NULL${promptFilter(opts, params)}
+    GROUP BY p.intent, d.domain, d.media_type, o.name, o.domain_authority,
+             d.owned_by_brand_id, d.outlet_id
+    ORDER BY p.intent, citations DESC`, params);
+}
+
+// Prompts matching a fan-out keyword, with measurement status.
+export async function promptsForKeyword(clientId, kw, limit = 30) {
+  return q(`
+    SELECT p.text, p.intent::text AS intent, f.name AS facet, p.source,
+           COUNT(r.id)::int AS runs
+    FROM prompts p
+    LEFT JOIN facets f ON f.id = p.facet_id
+    LEFT JOIN llm_runs r ON r.prompt_id = p.id
+    WHERE p.client_id = $1 AND p.text ILIKE $2
+    GROUP BY p.id, p.text, p.intent, f.name, p.source
+    ORDER BY runs DESC, p.id DESC LIMIT $3`,
+    [Number(clientId), `%${kw}%`, limit]);
+}
+
+// ---------- PR attribution -----------------------------------------
+
+// Every cited article by a media-list journalist, flagged "won" when its
+// first citation followed the journalist's addition to the list.
+export async function attributionArticles(clientId) {
+  return q(`
+    WITH fc AS (
+      SELECT u.article_id, MIN(r.run_date) AS first_cited,
+             COUNT(*)::int AS citations, COUNT(DISTINCT r.engine)::int AS engines
+      FROM cited_urls u
+      JOIN llm_runs r ON r.id = u.run_id
+      WHERE r.client_id = $1 AND u.article_id IS NOT NULL
+      GROUP BY u.article_id)
+    SELECT j.name AS journalist, o.name AS outlet, o.domain_authority::int AS da,
+           a.title, a.url, fc.first_cited::text AS first_cited,
+           fc.citations, fc.engines,
+           ml.added_at::date::text AS added,
+           (fc.first_cited >= ml.added_at::date) AS won
+    FROM media_list_entries ml
+    JOIN journalists j ON j.id = ml.journalist_id
+    JOIN articles a ON a.journalist_id = j.id
+    JOIN fc ON fc.article_id = a.id
+    LEFT JOIN media_outlets o ON o.id = a.outlet_id
+    WHERE ml.client_id = $1
+    ORDER BY won DESC, fc.citations DESC`, [Number(clientId)]);
+}
+
+// Per-journalist citation volume before vs after they were added.
+export async function attributionByJournalist(clientId) {
+  return q(`
+    SELECT j.name AS journalist, o.name AS outlet,
+           ml.added_at::date::text AS added,
+           COUNT(u.id) FILTER (WHERE r.run_date <  ml.added_at::date)::int AS before_cites,
+           COUNT(u.id) FILTER (WHERE r.run_date >= ml.added_at::date)::int AS after_cites
+    FROM media_list_entries ml
+    JOIN journalists j ON j.id = ml.journalist_id
+    LEFT JOIN media_outlets o ON o.id = j.outlet_id
+    LEFT JOIN cited_urls u ON u.journalist_id = j.id
+    LEFT JOIN llm_runs r ON r.id = u.run_id AND r.client_id = ml.client_id
+    WHERE ml.client_id = $1
+    GROUP BY j.name, o.name, ml.added_at
+    ORDER BY after_cites DESC`, [Number(clientId)]);
+}
+
+// Denominator for "share of earned citations from won articles".
+export async function earnedCitationCount(clientId) {
+  const [row] = await q(`
+    SELECT COUNT(*)::int AS n
+    FROM cited_urls u
+    JOIN llm_runs r ON r.id = u.run_id
+    JOIN cited_domains d ON d.id = u.domain_id
+    WHERE r.client_id = $1 AND d.media_type = 'earned'`, [Number(clientId)]);
+  return row?.n ?? 0;
+}
+
 // ---------- KPI row -----------------------------------------------
 
 export async function kpis(f, brand) {

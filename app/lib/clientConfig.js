@@ -16,6 +16,8 @@ export async function loadClientConfig(id) {
      WHERE r.client_id = $1 ORDER BY r.position`, [client.id]);
   const vocab = await q(
     "SELECT term FROM key_term_vocab WHERE client_id = $1 ORDER BY id", [client.id]);
+  const facets = await q(
+    "SELECT name, pattern FROM facets WHERE client_id = $1 ORDER BY position, id", [client.id]);
 
   const asRow = (b) => ({
     name: b.name,
@@ -38,6 +40,7 @@ export async function loadClientConfig(id) {
     fallback_category: catchAll?.category ?? categories[0]?.name ?? "",
     rules: rules.filter((r) => r.pattern !== ".*"),
     vocab: vocab.map((v) => v.term),
+    facets,
   };
 }
 

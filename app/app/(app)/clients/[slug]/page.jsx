@@ -14,6 +14,7 @@ import SentimentChart from "@/components/charts/SentimentChart";
 import KeyTerms from "@/components/KeyTerms";
 import JournalistsTable from "@/components/JournalistsTable";
 import ExportButton from "@/components/ExportButton";
+import ClientTabs from "@/components/ClientTabs";
 import { OrgMentionsTable, DomainsTable, OwnedUrlsTable, OutletsTable } from "@/components/Tables";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,7 @@ export default async function Dashboard({ params, searchParams }) {
           <h1 className="mt-1 text-2xl font-semibold">
             {brand} — Generative Engine Visibility
           </h1>
+          <ClientTabs slug={client.slug} active="" />
         </header>
         <div className="card mx-auto max-w-xl p-10 text-center">
           <h2 className="text-base font-semibold">No data ingested yet</h2>
@@ -85,6 +87,7 @@ python enrich_bylines.py --client ${client.slug}`}
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
             {matrix.length ? `${sov.length} tracked brands · ChatGPT, Gemini & Claude` : "No data ingested yet"}
           </p>
+          <ClientTabs slug={client.slug} active="" />
         </div>
         <Filters engine={engine} range={range} basePath={basePath} bounds={bounds} />
       </header>

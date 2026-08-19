@@ -31,7 +31,7 @@ import psycopg2
 import config
 from client_config import ClientConfig, load_client
 from constants import (JUNK_TOKENS, MULTI_TLDS, SOCIAL_DOMAINS, STOPWORDS,
-                       URL_RE, VENDOR_MAP, normalize_url)
+                       URL_RE, VENDOR_MAP, classify_intent, normalize_url)
 from sentiment import get_analyzer
 
 csv.field_size_limit(10_000_000)
@@ -120,10 +120,14 @@ def run(client_slug, csv_path):
             ptext = row["prompt"].strip()
             if ptext not in prompt_cache:
                 cur.execute(
-                    """INSERT INTO prompts(client_id, text, keyword_category_id) VALUES (%s,%s,%s)
-                       ON CONFLICT (client_id, text) DO UPDATE SET keyword_category_id=EXCLUDED.keyword_category_id
+                    """INSERT INTO prompts(client_id, text, keyword_category_id, intent, facet_id)
+                       VALUES (%s,%s,%s,%s,%s)
+                       ON CONFLICT (client_id, text) DO UPDATE SET
+                         keyword_category_id=EXCLUDED.keyword_category_id,
+                         intent=EXCLUDED.intent, facet_id=EXCLUDED.facet_id
                        RETURNING id""",
-                    (cfg.client_id, ptext, cfg.keyword_for_prompt(ptext)))
+                    (cfg.client_id, ptext, cfg.keyword_for_prompt(ptext),
+                     classify_intent(ptext), cfg.facet_for_prompt(ptext)))
                 prompt_cache[ptext] = cur.fetchone()[0]
 
             cur.execute(

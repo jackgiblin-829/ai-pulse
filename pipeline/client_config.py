@@ -30,6 +30,8 @@ class ClientConfig:
     # ordered (compiled pattern, keyword_category_id)
     keyword_rules: list
     key_term_vocab: list
+    # ordered (compiled pattern, facet_id) — service areas / product lines
+    facet_rules: list = field(default_factory=list)
     # derived
     owned_lookup: dict = field(default_factory=dict)     # domain -> brand name
     brand_regexes: dict = field(default_factory=dict)    # brand name -> compiled alias regex
@@ -42,6 +44,13 @@ class ClientConfig:
             if pattern.search(pl):
                 return cat_id
         return self.fallback_category_id
+
+    def facet_for_prompt(self, prompt: str):
+        pl = prompt.lower()
+        for pattern, facet_id in self.facet_rules:
+            if pattern.search(pl):
+                return facet_id
+        return None
 
 
 def load_client(cur, slug: str) -> ClientConfig:
@@ -76,10 +85,16 @@ def load_client(cur, slug: str) -> ClientConfig:
     cur.execute("SELECT term FROM key_term_vocab WHERE client_id = %s", (client_id,))
     vocab = [t for (t,) in cur.fetchall()]
 
+    cur.execute(
+        "SELECT pattern, id FROM facets WHERE client_id = %s ORDER BY position, id",
+        (client_id,))
+    facet_rules = [(re.compile(p, re.IGNORECASE), fid) for p, fid in cur.fetchall()]
+
     cfg = ClientConfig(
         client_id=client_id, slug=slug, name=name, target_brand=target,
         brands=brands, keyword_categories=kw_ids, keyword_rules=rules,
-        key_term_vocab=vocab, fallback_category_id=fallback,
+        key_term_vocab=vocab, facet_rules=facet_rules,
+        fallback_category_id=fallback,
     )
     for bname, b in brands.items():
         for d in (b["owned"] or []):

@@ -15,6 +15,8 @@ CREATE TYPE engine_t          AS ENUM ('chatgpt', 'gemini', 'claude');
 CREATE TYPE media_type_t      AS ENUM ('earned', 'owned', 'social', 'other');
 CREATE TYPE brand_role_t      AS ENUM ('target', 'competitor', 'ecosystem');
 CREATE TYPE sentiment_label_t AS ENUM ('positive', 'neutral', 'negative');
+-- Search intent of a prompt, classified by ordered rules at ingest.
+CREATE TYPE intent_t          AS ENUM ('informational', 'commercial', 'comparison', 'transactional');
 
 -- ---------- Tenancy ---------------------------------------------
 
@@ -83,12 +85,27 @@ CREATE TABLE key_term_vocab (
     UNIQUE (client_id, term)
 );
 
+-- Service-area / product facets: a second prompt-classification axis
+-- ("Adirondack & rockers", "Kenya safaris", ...), regex-matched like
+-- keyword rules. Optional per client.
+CREATE TABLE facets (
+    id         SERIAL PRIMARY KEY,
+    client_id  INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    pattern    TEXT NOT NULL,
+    position   INT NOT NULL DEFAULT 0,
+    UNIQUE (client_id, name)
+);
+
 -- The seed-prompt library.
 CREATE TABLE prompts (
     id                   SERIAL PRIMARY KEY,
     client_id            INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     text                 TEXT NOT NULL,
     keyword_category_id  INT REFERENCES keyword_categories(id),
+    intent               intent_t,
+    facet_id             INT REFERENCES facets(id) ON DELETE SET NULL,
+    source               TEXT NOT NULL DEFAULT 'import',   -- 'import' | 'fanout'
     active               BOOLEAN NOT NULL DEFAULT TRUE,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (client_id, text)

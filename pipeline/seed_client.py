@@ -98,6 +98,16 @@ KEY_TERM_VOCAB = [
     "white glove delivery", "folding design", "counter height", "bar height",
 ]
 
+# Service-area / product facets: ordered (name, pattern) — the second
+# prompt-classification axis for the Citation Targets view.
+FACETS = [
+    ("Adirondack & rockers", r"adirondack|rocking chair|rocker|glider"),
+    ("Dining sets",          r"dining|table|bar height|counter height"),
+    ("Lounge & deep seating", r"chaise|lounge|deep seating|sectional|conversation set"),
+    ("Fire pit sets",        r"fire pit"),
+    ("Commercial & hospitality", r"commercial|restaurant|hotel|hospitality"),
+]
+
 # outlet -> (domain, domain_authority, outlet_type) — global reference data.
 MEDIA_OUTLETS = {
     "The Spruce":            ("thespruce.com", 92, "lifestyle"),
@@ -160,6 +170,13 @@ def seed_client(cur, slug: str, name: str):
     for term in KEY_TERM_VOCAB:
         cur.execute(
             "INSERT INTO key_term_vocab(client_id, term) VALUES (%s,%s)", (client_id, term))
+
+    for pos, (fname, pattern) in enumerate(FACETS):
+        cur.execute(
+            """INSERT INTO facets(client_id, name, pattern, position) VALUES (%s,%s,%s,%s)
+               ON CONFLICT (client_id, name) DO UPDATE SET pattern=EXCLUDED.pattern,
+                 position=EXCLUDED.position""",
+            (client_id, fname, pattern, pos))
 
     return client_id
 

@@ -40,6 +40,7 @@ export default function ClientForm({ initial }) {
   const [fallback, setFallback] = useState(initial?.fallback_category ?? "");
   const [rules, setRules] = useState(initial?.rules ?? []);
   const [vocab, setVocab] = useState((initial?.vocab ?? []).join("\n"));
+  const [facets, setFacets] = useState(initial?.facets ?? []);
 
   const catList = categories.split("\n").map((c) => c.trim()).filter(Boolean);
 
@@ -61,6 +62,7 @@ export default function ClientForm({ initial }) {
     categories: catList,
     fallback_category: fallback || catList[0] || "",
     rules, vocab: vocab.split("\n"),
+    facets,
   });
 
   return (
@@ -163,6 +165,32 @@ export default function ClientForm({ initial }) {
         <button type="button" className={smallBtn}
           onClick={() => setEcosystem((r) => [...r, { name: "", aliases: "" }])}>
           + Add org
+        </button>
+      </Section>
+
+      <Section title="Service areas / products" hint="Optional second classification axis for Citation Targets — a name plus a regex that matches prompts about it (e.g. 'Dining sets' / dining|table).">
+        {facets.map((f, i) => (
+          <div key={i} className="flex items-end gap-3">
+            <div className="grid flex-1 gap-3 sm:grid-cols-2">
+              <label className={labelCls}>
+                Name
+                <input value={f.name} className={inputCls}
+                  onChange={(e) => updateRow(setFacets)(i, "name", e.target.value)} />
+              </label>
+              <label className={labelCls}>
+                Pattern
+                <input value={f.pattern} className={`${inputCls} font-mono text-xs`}
+                  onChange={(e) => updateRow(setFacets)(i, "pattern", e.target.value)} />
+              </label>
+            </div>
+            <button type="button" className={`${smallBtn} mb-0.5`} aria-label="Remove facet" onClick={() => removeRow(setFacets)(i)}>
+              ✕
+            </button>
+          </div>
+        ))}
+        <button type="button" className={smallBtn}
+          onClick={() => setFacets((r) => [...r, { name: "", pattern: "" }])}>
+          + Add service area / product
         </button>
       </Section>
 

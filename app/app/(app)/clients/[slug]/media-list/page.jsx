@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getClientBySlug, mediaList } from "@/lib/queries";
 import MediaListTable from "@/components/MediaListTable";
+import ClientTabs from "@/components/ClientTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export default async function MediaListPage({ params }) {
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
             {rows.length} journalist{rows.length === 1 ? "" : "s"} · outreach targets saved from the dashboard
           </p>
+          <ClientTabs slug={client.slug} active="/media-list" />
         </div>
         <a
           href={`/api/clients/${client.slug}/media-list/export`}

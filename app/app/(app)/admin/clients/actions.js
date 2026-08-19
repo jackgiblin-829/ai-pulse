@@ -117,6 +117,27 @@ export async function saveClient(prevState, formData) {
         [clientId, o.name.trim(), aliases.length ? aliases : [o.name.trim()]]);
     }
 
+    // Facets: upsert by name, then drop removed ones (prompts.facet_id
+    // is ON DELETE SET NULL, so upserting preserves classifications).
+    const facetRows = (p.facets ?? []).filter((f) => f.name?.trim() && f.pattern?.trim());
+    for (const f of facetRows) {
+      try {
+        new RegExp(f.pattern);
+      } catch {
+        throw new Error(`Invalid facet regex: ${f.pattern}`);
+      }
+    }
+    for (let i = 0; i < facetRows.length; i++) {
+      await conn.query(
+        `INSERT INTO facets (client_id, name, pattern, position) VALUES ($1,$2,$3,$4)
+         ON CONFLICT (client_id, name) DO UPDATE SET pattern=EXCLUDED.pattern,
+           position=EXCLUDED.position`,
+        [clientId, facetRows[i].name.trim(), facetRows[i].pattern.trim(), i]);
+    }
+    await conn.query(
+      `DELETE FROM facets WHERE client_id=$1 AND NOT (name = ANY($2::text[]))`,
+      [clientId, facetRows.map((f) => f.name.trim())]);
+
     // Vocab: replace wholesale.
     await conn.query("DELETE FROM key_term_vocab WHERE client_id=$1", [clientId]);
     for (const term of (p.vocab ?? []).map((t) => t.trim()).filter(Boolean)) {

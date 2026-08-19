@@ -138,6 +138,39 @@ export default function HowItWorks() {
           </p>
         </Section>
 
+        <Section title="Citation targets & keyword fan-out">
+          <p>
+            The <strong className="text-[var(--text-primary)]">Citation targets</strong>{" "}
+            tab re-slices every citation by the prompt's search intent —
+            commercial research, informational, comparison, transactional — and
+            optionally by service area or product line. Each source carries a
+            status: <em>Owned</em> (the brand's own domain), <em>Engaged</em>{" "}
+            (the outlet already has a journalist on the media list), or{" "}
+            <em>Target</em> (earned media the engines trust where there's no
+            relationship yet — the pitch list).
+          </p>
+          <p>
+            Type a keyword and <em>Analyze</em> filters the whole view to
+            matching prompts. <em>Fan out</em> generates a spread of new prompts
+            across all four intents (including brand-vs-competitor comparisons)
+            and adds them to the prompt library — they're measured on the next
+            collection run, so coverage questions become trackable the moment
+            you think of them.
+          </p>
+        </Section>
+
+        <Section title="PR attribution">
+          <p>
+            The <strong className="text-[var(--text-primary)]">Attribution</strong>{" "}
+            tab measures outreach outcomes. The moment a journalist is added to
+            the media list starts their attribution window; an article counts as
+            a <em>win</em> when its first AI-engine citation lands after that
+            date. The view totals articles won, citations earned from wins, the
+            share of all earned citations they represent, and each journalist's
+            citation volume before vs. after outreach began.
+          </p>
+        </Section>
+
         <Section title="The media list workflow">
           <p>
             On the dashboard, hit{" "}

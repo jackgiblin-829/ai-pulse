@@ -28,6 +28,23 @@ JUNK_TOKENS = {
     "pages", "consulted", "watch", "sites", "article", "articles",
 }
 
+# Ordered search-intent rules: first match classifies the prompt.
+# Generic across clients — verticals differ, buyer language doesn't.
+INTENT_RULES = [
+    (re.compile(r"\bvs\.?\b|\bversus\b|compared? (to|with)|alternatives? to|or should i", re.I), "comparison"),
+    (re.compile(r"\bbuy\b|\bprice\b|\bpricing\b|\bcost\b|\bdeal\b|\bdiscount\b|where (to|can i) (buy|get|order)|near me|worth (the|it)|\border\b", re.I), "transactional"),
+    (re.compile(r"\bbest\b|\btop\b|recommend|review|\bbrands?\b|which .* (should|do)|favorite|most (reliable|durable|popular)", re.I), "commercial"),
+    # informational is the catch-all: how/what/why/can/does...
+]
+
+
+def classify_intent(prompt):
+    for pattern, intent in INTENT_RULES:
+        if pattern.search(prompt):
+            return intent
+    return "informational"
+
+
 def normalize_url(url):
     """Canonical URL identity shared by ingest.py and enrich_bylines.py:
     forced https, lowercased host with 'www.' stripped, path without a
