@@ -1,28 +1,71 @@
 import { NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { q } from "@/lib/db";
 import { getClientBySlug, facetsForClient } from "@/lib/queries";
 
-// Intent fan-out templates. Deterministic and template-based; a future
-// upgrade can swap in a Claude API call for richer phrasing without
-// changing the storage contract (prompts with source='fanout').
-function buildFanout(kw, target, competitors) {
+// Template fallback — number-agnostic phrasing so plural and singular
+// keywords both read naturally. Used when ANTHROPIC_API_KEY is unset
+// or the generation call fails.
+function templateFanout(kw, target, competitors) {
   const prompts = [
-    { intent: "informational", text: `How do I choose the right ${kw}?` },
-    { intent: "informational", text: `What should I know before buying ${kw}?` },
-    { intent: "informational", text: `What are common mistakes people make when choosing ${kw}?` },
-    { intent: "commercial", text: `What are the best ${kw} brands?` },
-    { intent: "commercial", text: `Which ${kw} do experts recommend this year?` },
-    { intent: "commercial", text: `What are the top-rated ${kw} for the money?` },
+    { intent: "informational", text: `How do I choose the right option when shopping for ${kw}?` },
+    { intent: "informational", text: `What should I know before spending money on ${kw}?` },
+    { intent: "informational", text: `What are common mistakes people make when shopping for ${kw}?` },
+    { intent: "commercial", text: `What are the best brands for ${kw}?` },
+    { intent: "commercial", text: `What do experts recommend for ${kw} this year?` },
+    { intent: "commercial", text: `What are the top-rated options for ${kw}?` },
     { intent: "transactional", text: `Where is the best place to buy ${kw}?` },
-    { intent: "transactional", text: `Are ${kw} worth the price?` },
+    { intent: "transactional", text: `Is it worth paying more for ${kw}?` },
   ];
   if (target) {
     prompts.push({ intent: "comparison", text: `What are the best alternatives to ${target} for ${kw}?` });
     if (competitors[0]) {
-      prompts.push({ intent: "comparison", text: `${target} vs ${competitors[0]}: which ${kw} is better?` });
+      prompts.push({ intent: "comparison", text: `${target} or ${competitors[0]} — which is better for ${kw}?` });
     }
   }
   return prompts;
+}
+
+const FanoutSchema = z.object({
+  prompts: z.array(
+    z.object({
+      intent: z.enum(["informational", "commercial", "comparison", "transactional"]),
+      text: z.string(),
+    })
+  ),
+});
+
+// Claude-generated fan-out: natural buyer phrasing across all four
+// intents, grammatical for singular and plural keywords alike.
+async function claudeFanout(kw, target, competitors) {
+  const client = new Anthropic();
+  const response = await client.messages.parse({
+    model: "claude-opus-5",
+    max_tokens: 2048,
+    output_config: { effort: "low", format: zodOutputFormat(FanoutSchema) },
+    system:
+      "You generate realistic buyer questions people ask AI assistants. " +
+      "Questions must be grammatical, natural, and phrased the way real " +
+      "shoppers talk — never template-stiff.",
+    messages: [
+      {
+        role: "user",
+        content:
+          `Keyword: "${kw}"\n` +
+          (target ? `Target brand: ${target}\n` : "") +
+          (competitors.length ? `Competitors: ${competitors.join(", ")}\n` : "") +
+          "Generate exactly 10 distinct questions about this keyword: " +
+          "3 informational (how/what to know), 3 commercial (best/recommendations), " +
+          "2 transactional (where to buy / worth the price), and 2 comparison " +
+          "(target brand vs a competitor, and alternatives to the target brand).",
+      },
+    ],
+  });
+  const parsed = response.parsed_output;
+  if (!parsed?.prompts?.length) throw new Error("empty fanout");
+  return parsed.prompts.slice(0, 12).map((p) => ({ intent: p.intent, text: p.text.trim() }));
 }
 
 export async function POST(req, { params }) {
@@ -40,34 +83,50 @@ export async function POST(req, { params }) {
     `SELECT name FROM brands WHERE client_id = $1 AND role = 'competitor'
      ORDER BY sort_order LIMIT 2`, [client.id])).map((r) => r.name);
   const facets = await facetsForClient(client.id);
+  const rules = await q(
+    `SELECT pattern, keyword_category_id FROM keyword_rules
+     WHERE client_id = $1 ORDER BY position`, [client.id]);
 
-  // classify each generated prompt's facet with the client's own rules
-  const facetFor = (text) => {
-    for (const f of facets) {
+  // Classify with the client's own rule sets (same first-match semantics
+  // as the pipeline; JS RegExp — python-only syntax is skipped).
+  const matchRules = (text, ruleset, key) => {
+    for (const r of ruleset) {
       try {
-        if (new RegExp(f.pattern, "i").test(text)) return f.id;
-      } catch { /* python-only pattern syntax — skip */ }
+        if (new RegExp(r.pattern, "i").test(text)) return r[key];
+      } catch { /* skip non-portable pattern */ }
     }
     return null;
   };
+  const categoryFor = (text) =>
+    matchRules(text, rules, "keyword_category_id") ??
+    rules[rules.length - 1]?.keyword_category_id ?? null;
+  const facetFor = (text) => matchRules(text, facets, "id");
 
-  // fallback keyword category = the client's catch-all rule target
-  const [{ keyword_category_id: fallbackCat } = {}] = await q(
-    `SELECT keyword_category_id FROM keyword_rules
-     WHERE client_id = $1 ORDER BY position DESC LIMIT 1`, [client.id]);
+  let generated;
+  let generator = "templates";
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      generated = await claudeFanout(kw, client.target_brand, competitors);
+      generator = "claude";
+    } catch {
+      generated = templateFanout(kw, client.target_brand, competitors);
+    }
+  } else {
+    generated = templateFanout(kw, client.target_brand, competitors);
+  }
 
   const created = [];
   let skipped = 0;
-  for (const p of buildFanout(kw, client.target_brand, competitors)) {
+  for (const p of generated) {
     const rows = await q(
       `INSERT INTO prompts (client_id, text, keyword_category_id, intent, facet_id, source, active)
        VALUES ($1, $2, $3, $4, $5, 'fanout', TRUE)
        ON CONFLICT (client_id, text) DO NOTHING
        RETURNING id`,
-      [client.id, p.text, fallbackCat ?? null, p.intent, facetFor(p.text)]);
+      [client.id, p.text, categoryFor(p.text), p.intent, facetFor(p.text)]);
     if (rows.length) created.push(p);
     else skipped++;
   }
 
-  return NextResponse.json({ keyword: kw, created, skipped });
+  return NextResponse.json({ keyword: kw, created, skipped, generator });
 }

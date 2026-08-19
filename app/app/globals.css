@@ -6,11 +6,11 @@
   --page: #f9f9f7;
   --text-primary: #0b0b0b;
   --text-secondary: #52514e;
-  --text-muted: #898781;
+  --text-muted: #6e6b65;
   --grid: #e1e0d9;
   --baseline: #c3c2b7;
   --border: rgba(11, 11, 11, 0.1);
-  --accent: #2a78d6;
+  --accent: #1c5cab;
 }
 
 body {
@@ -26,6 +26,23 @@ body {
 }
 
 .tabular { font-variant-numeric: tabular-nums; }
+
+/* Visible keyboard focus everywhere */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Skip-to-content: visually hidden until focused */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  z-index: 50;
+  background: var(--text-primary);
+  color: #fff;
+  border-radius: 0 0 8px 0;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.skip-link:focus { left: 0; top: 0; }
 
 /* react-day-picker: theme to the app's CSS vars */
 .rdp-root {

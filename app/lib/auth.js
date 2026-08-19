@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
+import { q } from "./db";
 
 export const SESSION_COOKIE = "ai_pulse_session";
 const THIRTY_DAYS = 60 * 60 * 24 * 30;
@@ -16,7 +17,8 @@ export const hashPassword = (pw) => bcrypt.hash(pw, 12);
 export const verifyPassword = (pw, hash) => bcrypt.compare(pw, hash);
 
 export async function createSessionToken(user) {
-  return new SignJWT({ email: user.email, name: user.name, role: user.role })
+  return new SignJWT({ email: user.email, name: user.name, role: user.role,
+                       tv: user.token_version ?? 0 })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(String(user.id))
     .setIssuedAt()
@@ -54,9 +56,17 @@ export async function getSession() {
   }
 }
 
+// Full check: valid JWT AND the user still exists with an unchanged
+// token_version — deleting a user or resetting their password (which
+// bumps token_version) invalidates every outstanding session.
 export async function requireSession() {
   const session = await getSession();
   if (!session) redirect("/login");
+  const [user] = await q("SELECT token_version FROM users WHERE id = $1", [Number(session.sub)]);
+  if (!user || user.token_version !== (session.tv ?? 0)) {
+    // Can't clear the cookie mid-render; logging back in overwrites it.
+    redirect("/login");
+  }
   return session;
 }
 

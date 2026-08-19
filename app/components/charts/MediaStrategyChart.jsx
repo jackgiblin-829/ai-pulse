@@ -16,8 +16,14 @@ export default function MediaStrategyChart({ rows }) {
     byDate.get(r.date)[r.media_type] = r.citations;
   }
   const data = [...byDate.values()];
+  const totals = {};
+  for (const r of rows) totals[r.media_type] = (totals[r.media_type] ?? 0) + r.citations;
+  const summary = rows.length
+    ? "Cited URLs by media type over time. Totals: " +
+      ORDER.filter((m) => totals[m]).map((m) => `${LABELS[m]} ${totals[m]}`).join(", ") + "."
+    : "Cited URLs by media type over time. No data.";
   return (
-    <div className="h-72">
+    <div className="h-72" role="img" aria-label={summary}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
           <CartesianGrid vertical={false} />

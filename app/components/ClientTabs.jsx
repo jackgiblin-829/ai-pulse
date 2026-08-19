@@ -7,23 +7,28 @@ const TABS = [
   ["/attribution", "Attribution"],
 ];
 
+// View switcher — deliberately styled as underline tabs, not pills, so it
+// reads as navigation rather than a data filter (which uses pills).
 export default function ClientTabs({ slug, active }) {
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-1.5">
-      {TABS.map(([path, label]) => (
-        <Link
-          key={path}
-          href={`/clients/${slug}${path}`}
-          aria-current={active === path ? "page" : undefined}
-          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-            active === path
-              ? "bg-[var(--text-primary)] text-white"
-              : "bg-white text-[var(--text-secondary)] border border-[var(--border)] hover:bg-[var(--page)]"
-          }`}
-        >
-          {label}
-        </Link>
-      ))}
-    </div>
+    <nav aria-label="Client views" className="mt-4 flex items-center gap-5 border-b border-[var(--grid)]">
+      {TABS.map(([path, label]) => {
+        const isActive = active === path;
+        return (
+          <Link
+            key={path}
+            href={`/clients/${slug}${path}`}
+            aria-current={isActive ? "page" : undefined}
+            className={`-mb-px border-b-2 pb-2 text-sm transition-colors ${
+              isActive
+                ? "border-[var(--text-primary)] font-semibold text-[var(--text-primary)]"
+                : "border-transparent font-medium text-[var(--text-muted)] hover:border-[var(--baseline)] hover:text-[var(--text-secondary)]"
+            }`}
+          >
+            {label}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }

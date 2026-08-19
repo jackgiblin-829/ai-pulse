@@ -16,6 +16,7 @@ export default async function AppLayout({ children }) {
   ];
   return (
     <>
+      <a href="#main" className="skip-link">Skip to content</a>
       <nav className="border-b border-[var(--border)] bg-[var(--surface-1)]">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-2.5">
           <div className="flex items-center gap-5">
@@ -25,7 +26,12 @@ export default async function AppLayout({ children }) {
             <NavLinks links={links} />
           </div>
           <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
-            <span className="hidden whitespace-nowrap sm:inline">{session.name}</span>
+            <Link
+              href="/account"
+              className="hidden whitespace-nowrap hover:text-[var(--text-primary)] sm:inline"
+            >
+              {session.name}
+            </Link>
             <form action="/api/auth/logout" method="post">
               <button
                 type="submit"
@@ -37,7 +43,7 @@ export default async function AppLayout({ children }) {
           </div>
         </div>
       </nav>
-      {children}
+      <div id="main" tabIndex={-1}>{children}</div>
     </>
   );
 }

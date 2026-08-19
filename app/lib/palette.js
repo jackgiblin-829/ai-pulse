@@ -35,7 +35,7 @@ export const SENTIMENT_COLORS = { positive: "#2a78d6", neutral: "#c3c2b7", negat
 export const INK = {
   primary: "#0b0b0b",
   secondary: "#52514e",
-  muted: "#898781",
+  muted: "#6e6b65",
   grid: "#e1e0d9",
   baseline: "#c3c2b7",
   surface: "#fcfcfb",

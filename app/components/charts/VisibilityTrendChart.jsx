@@ -13,8 +13,15 @@ export default function VisibilityTrendChart({ rows }) {
     byDate.get(r.date)[r.engine] = r.visibility;
   }
   const data = [...byDate.values()];
+  const latest = data[data.length - 1];
+  const summary = latest
+    ? `Visibility over time by engine. Latest (${latest.date}): ` +
+      Object.keys(ENGINE_LABELS)
+        .map((e) => `${ENGINE_LABELS[e]} ${latest[e] ?? 0}%`)
+        .join(", ") + "."
+    : "Visibility over time by engine. No data.";
   return (
-    <div className="h-72">
+    <div className="h-72" role="img" aria-label={summary}>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
           <CartesianGrid vertical={false} strokeDasharray="0" />

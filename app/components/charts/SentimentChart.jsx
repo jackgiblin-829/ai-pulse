@@ -11,8 +11,12 @@ const LABELS = { positive: "Positive", neutral: "Neutral", negative: "Negative" 
 // rows: [{date, positive, neutral, negative}] (percentages)
 export default function SentimentChart({ rows }) {
   const data = rows.map((r) => ({ ...r, date: r.date.slice(5) }));
+  const latest = data[data.length - 1];
+  const summary = latest
+    ? `Sentiment mix per collection date. Latest (${latest.date}): positive ${latest.positive}%, neutral ${latest.neutral}%, negative ${latest.negative}%.`
+    : "Sentiment mix per collection date. No data.";
   return (
-    <div className="h-72">
+    <div className="h-72" role="img" aria-label={summary}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 12, left: -16, bottom: 0 }}>
           <CartesianGrid vertical={false} />

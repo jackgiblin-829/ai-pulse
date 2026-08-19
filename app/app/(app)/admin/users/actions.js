@@ -43,7 +43,10 @@ export async function resetPassword(prevState, formData) {
   const id = Number(formData.get("id"));
   const password = String(formData.get("password") ?? "");
   if (password.length < 8) return { error: "Password must be at least 8 characters" };
-  await q("UPDATE users SET password_hash = $1 WHERE id = $2", [await hashPassword(password), id]);
+  // token_version bump revokes every outstanding session for this user.
+  await q(
+    "UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2",
+    [await hashPassword(password), id]);
   revalidatePath("/admin/users");
   return { ok: true };
 }

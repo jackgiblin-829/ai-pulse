@@ -36,13 +36,25 @@ export default function DateRangePicker({ engine, range, basePath, bounds }) {
     return () => mq.removeEventListener("change", update);
   }, []);
 
+  const triggerRef = useRef(null);
+
   useEffect(() => {
     if (!open) return;
     const onDown = (e) => {
       if (ref.current && !ref.current.contains(e.target)) setOpen(false);
     };
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   const active = range.kind === "custom";
@@ -66,6 +78,9 @@ export default function DateRangePicker({ engine, range, basePath, bounds }) {
     <div className="relative" ref={ref}>
       <button
         type="button"
+        ref={triggerRef}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
           active

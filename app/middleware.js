@@ -10,7 +10,13 @@ export async function middleware(req) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (token) {
     try {
-      await jwtVerify(token, new TextEncoder().encode(process.env.AUTH_SECRET));
+      const { payload } = await jwtVerify(
+        token, new TextEncoder().encode(process.env.AUTH_SECRET));
+      // Role-gate the admin section here so unauthorized requests get a
+      // real 3xx (the streamed server-component redirect reads as 200).
+      if (req.nextUrl.pathname.startsWith("/admin") && payload.role !== "admin") {
+        return NextResponse.redirect(new URL("/", req.url));
+      }
       return NextResponse.next();
     } catch {
       /* fall through to redirect */

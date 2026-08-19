@@ -24,7 +24,14 @@ export default function TargetsTable({ rows }) {
           {rows.map((r) => (
             <tr key={r.domain}>
               <td className="border-t border-[var(--grid)] py-2 text-sm">
-                <span className="font-medium">{r.outlet ?? r.domain}</span>
+                <a
+                  href={`https://${r.domain}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium hover:text-[var(--accent)]"
+                >
+                  {r.outlet ?? r.domain}
+                </a>
                 {r.outlet && (
                   <span className="ml-1.5 text-xs text-[var(--text-muted)]">{r.domain}</span>
                 )}

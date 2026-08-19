@@ -11,8 +11,11 @@ export default function SovPie({ items, max = 8 }) {
     data = [...head, { name: "Other", pct: Math.round(tailPct * 10) / 10, color: GRAY }];
   }
   data = data.map((d, i) => ({ ...d, color: d.color ?? SLOTS[i] ?? GRAY }));
+  const summary = data.length
+    ? "Share breakdown: " + data.map((d) => `${d.name} ${d.pct}%`).join(", ") + "."
+    : "Share breakdown. No data.";
   return (
-    <div className="h-72">
+    <div className="h-72" role="img" aria-label={summary}>
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie data={data} dataKey="pct" nameKey="name" innerRadius="45%" outerRadius="78%"

@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function JournalistsTable({ rows, clientSlug }) {
+  const router = useRouter();
   const [added, setAdded] = useState(
     () => new Set(rows.filter((r) => r.in_media_list).map((r) => r.id))
   );
@@ -21,6 +23,7 @@ export default function JournalistsTable({ rows, clientSlug }) {
         isAdded ? next.delete(id) : next.add(id);
         return next;
       });
+      router.refresh(); // keep media-list/attribution views in sync
     }
     setBusy(null);
   }

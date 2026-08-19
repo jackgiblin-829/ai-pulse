@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getSession } from "@/lib/auth";
 
 export const metadata = { title: "How it works | AI Pulse" };
 
@@ -34,7 +35,9 @@ const Step = ({ n, title, children }) => (
   </li>
 );
 
-export default function HowItWorks() {
+export default async function HowItWorks() {
+  const session = await getSession();
+  const isAdmin = session?.role === "admin";
   return (
     <main className="mx-auto max-w-3xl px-6 py-8">
       <header className="mb-6">
@@ -191,9 +194,15 @@ export default function HowItWorks() {
         <Section title="Onboarding a new client">
           <p>
             Admins onboard clients at{" "}
-            <Link href="/admin/clients/new" className="text-[var(--accent)] underline">
-              Admin → Clients → New client
-            </Link>
+            {isAdmin ? (
+              <Link href="/admin/clients/new" className="text-[var(--accent)] underline">
+                Manage clients → New client
+              </Link>
+            ) : (
+              <span className="font-medium text-[var(--text-primary)]">
+                Manage clients → New client (admins)
+              </span>
+            )}
             : target brand + aliases, competitors (order sets chart colors), owned
             domains, ecosystem orgs, keyword categories with classification rules,
             and the key-term vocabulary. Then run the pipeline against an export:

@@ -37,8 +37,18 @@ CREATE TABLE users (
     name           TEXT NOT NULL,
     password_hash  TEXT NOT NULL,
     role           TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+    token_version  INT NOT NULL DEFAULT 0,        -- bump to revoke outstanding sessions
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Failed sign-in log for rate limiting (rows pruned on successful login).
+CREATE TABLE login_attempts (
+    id           SERIAL PRIMARY KEY,
+    email        TEXT NOT NULL,
+    ip           TEXT,
+    attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_login_attempts ON login_attempts (email, attempted_at);
 
 -- ---------- Reference / configuration tables --------------------
 
