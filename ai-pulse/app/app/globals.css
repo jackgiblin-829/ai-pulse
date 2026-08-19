@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --page: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.1);
+  --accent: #2a78d6;
+}
+
+body {
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Recharts chrome: recessive grid + muted axis text */
+.recharts-cartesian-grid line { stroke: var(--grid); }
+.recharts-text { fill: var(--text-muted); font-size: 11px; }
+.recharts-default-tooltip { border-radius: 8px !important; border: 1px solid var(--border) !important; }
