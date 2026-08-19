@@ -128,8 +128,8 @@ export default async function TargetsPage({ params, searchParams }) {
           </h2>
           {matched.length === 0 ? (
             <p className="mt-2 text-sm text-[var(--text-muted)]">
-              No prompts in the library mention this keyword yet — use “Fan out”
-              to generate an intent spread and add it to the library.
+              No prompts in the library mention this keyword yet — pick from the
+              candidate prompts above to start measuring it.
             </p>
           ) : (
             <div className="overflow-x-auto">

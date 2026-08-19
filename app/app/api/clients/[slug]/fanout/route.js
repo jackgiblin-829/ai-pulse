@@ -69,20 +69,25 @@ async function claudeFanout(kw, target, competitors) {
   return parsed.prompts.slice(0, 12).map((p) => ({ intent: p.intent, text: p.text.trim() }));
 }
 
+const INTENTS = new Set(["informational", "commercial", "comparison", "transactional"]);
+
+// Two-step flow:
+//   POST { keyword }                  -> preview: generated candidates,
+//                                        flagged when already in the library.
+//                                        Nothing is written.
+//   POST { keyword, add: [{text,intent}] } -> commit: insert only the
+//                                        prompts the user selected.
 export async function POST(req, { params }) {
   const { slug } = await params;
   const client = await getClientBySlug(slug);
   if (!client) return NextResponse.json({ error: "unknown client" }, { status: 404 });
 
-  const { keyword } = await req.json();
-  const kw = String(keyword ?? "").trim().toLowerCase();
+  const body = await req.json();
+  const kw = String(body.keyword ?? "").trim().toLowerCase();
   if (kw.length < 3 || kw.length > 80) {
     return NextResponse.json({ error: "Keyword must be 3–80 characters" }, { status: 400 });
   }
 
-  const competitors = (await q(
-    `SELECT name FROM brands WHERE client_id = $1 AND role = 'competitor'
-     ORDER BY sort_order LIMIT 2`, [client.id])).map((r) => r.name);
   const facets = await facetsForClient(client.id);
   const rules = await q(
     `SELECT pattern, keyword_category_id FROM keyword_rules
@@ -94,6 +99,33 @@ export async function POST(req, { params }) {
     matchRules(text, rules, "keyword_category_id") ??
     rules[rules.length - 1]?.keyword_category_id ?? null;
   const facetFor = (text) => matchRules(text, facets, "id");
+
+  // ---- commit: insert the user's selection ---------------------------
+  if (Array.isArray(body.add)) {
+    const selection = body.add
+      .filter((p) => INTENTS.has(p?.intent) && typeof p?.text === "string")
+      .map((p) => ({ intent: p.intent, text: p.text.trim() }))
+      .filter((p) => p.text.length >= 10 && p.text.length <= 300)
+      .slice(0, 20);
+    const created = [];
+    let skipped = 0;
+    for (const p of selection) {
+      const rows = await q(
+        `INSERT INTO prompts (client_id, text, keyword_category_id, intent, facet_id, source, active)
+         VALUES ($1, $2, $3, $4, $5, 'fanout', TRUE)
+         ON CONFLICT (client_id, text) DO NOTHING
+         RETURNING id`,
+        [client.id, p.text, categoryFor(p.text), p.intent, facetFor(p.text)]);
+      if (rows.length) created.push(p);
+      else skipped++;
+    }
+    return NextResponse.json({ keyword: kw, created, skipped });
+  }
+
+  // ---- preview: generate candidates, flag existing --------------------
+  const competitors = (await q(
+    `SELECT name FROM brands WHERE client_id = $1 AND role = 'competitor'
+     ORDER BY sort_order LIMIT 2`, [client.id])).map((r) => r.name);
 
   let generated;
   let generator = "templates";
@@ -108,18 +140,14 @@ export async function POST(req, { params }) {
     generated = templateFanout(kw, client.target_brand, competitors);
   }
 
-  const created = [];
-  let skipped = 0;
-  for (const p of generated) {
-    const rows = await q(
-      `INSERT INTO prompts (client_id, text, keyword_category_id, intent, facet_id, source, active)
-       VALUES ($1, $2, $3, $4, $5, 'fanout', TRUE)
-       ON CONFLICT (client_id, text) DO NOTHING
-       RETURNING id`,
-      [client.id, p.text, categoryFor(p.text), p.intent, facetFor(p.text)]);
-    if (rows.length) created.push(p);
-    else skipped++;
-  }
+  const existing = new Set(
+    (await q(
+      `SELECT text FROM prompts WHERE client_id = $1 AND text = ANY($2::text[])`,
+      [client.id, generated.map((p) => p.text)])).map((r) => r.text));
 
-  return NextResponse.json({ keyword: kw, created, skipped, generator });
+  return NextResponse.json({
+    keyword: kw,
+    generator,
+    candidates: generated.map((p) => ({ ...p, exists: existing.has(p.text) })),
+  });
 }

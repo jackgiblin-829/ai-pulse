@@ -153,12 +153,13 @@ export default async function HowItWorks() {
             relationship yet — the pitch list).
           </p>
           <p>
-            Type a keyword and <em>Analyze</em> filters the whole view to
-            matching prompts. <em>Fan out</em> generates a spread of new prompts
-            across all four intents (including brand-vs-competitor comparisons)
-            and adds them to the prompt library — they're measured on the next
-            collection run, so coverage questions become trackable the moment
-            you think of them.
+            Type a keyword and <em>Analyze</em> does two things at once: filters
+            the whole view to matching prompts, and generates an intent spread
+            of candidate prompts (including brand-vs-competitor comparisons).
+            Nothing enters the library automatically — check the candidates
+            worth measuring and hit <em>Add to prompt library</em>. They're
+            measured on the next collection run, so coverage questions become
+            trackable the moment you think of them.
           </p>
         </Section>
 
