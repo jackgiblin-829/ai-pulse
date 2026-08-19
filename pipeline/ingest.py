@@ -1,16 +1,18 @@
 """
 AI Pulse ingestion + NLP pipeline.
 
-Usage:  python3 ingest.py ../data/llm_export.csv
+Usage:  python3 ingest.py --client polywood ../data/llm_export.csv
 
 Stages
-  1. Seed reference tables (brands, keyword categories, media outlets,
-     journalists) from config + the media DB.
+  1. Load the client's configuration from Postgres (brands, keyword
+     taxonomy, key-term vocabulary — written by /admin/clients or
+     seed_client.py).
   2. Load raw export rows -> prompts (auto keyword-categorized) + llm_runs.
   3. Per response:
        - extract & normalize cited URLs, parse registrable domains
        - classify media type (earned / owned / social / other)
-       - resolve journalist bylines via the article-level media DB
+       - resolve journalist bylines from the crawled articles table
+         (populated by enrich_bylines.py)
        - detect brand + ecosystem-org mentions (alias regexes)
        - per-brand sentiment (LLM analyzer or lexicon fallback)
        - key-term extraction (curated vocab + statistical bigrams)
@@ -18,32 +20,26 @@ Stages
 
 Idempotent: re-running on the same file upserts rather than duplicating.
 """
-import csv, re, sys
+import argparse
+import csv
+import re
 from collections import Counter
 from urllib.parse import urlparse
 
 import psycopg2
-import psycopg2.extras
 
 import config
-from media_articles import ARTICLES
+from client_config import ClientConfig, load_client
+from constants import (JUNK_TOKENS, MULTI_TLDS, SOCIAL_DOMAINS, STOPWORDS,
+                       URL_RE, VENDOR_MAP, normalize_url)
 from sentiment import get_analyzer
 
 csv.field_size_limit(10_000_000)
 
-VENDOR_MAP = {
-    "chatgpt": "chatgpt", "openai": "chatgpt", "gpt-4o": "chatgpt", "gpt4": "chatgpt",
-    "gemini": "gemini", "google": "gemini", "bard": "gemini",
-    "claude": "claude", "anthropic": "claude",
-}
-
-URL_RE = re.compile(r"https?://[^\s\)\]\>\"',;]+")
-MULTI_TLDS = {"co.uk", "com.au", "co.nz", "co.jp", "com.br"}
-
 
 # ------------------------------------------------------------------ helpers
 
-def registrable_domain(host: str) -> str:
+def registrable_domain(host):
     host = host.lower().lstrip(".")
     if host.startswith("www."):
         host = host[4:]
@@ -53,136 +49,65 @@ def registrable_domain(host: str) -> str:
     return ".".join(parts[-2:]) if len(parts) >= 2 else host
 
 
-def classify_domain(domain: str, owned_lookup: dict) -> tuple[str, str | None]:
+def classify_domain(domain, cfg: ClientConfig, outlet_domains):
     """-> (media_type, owned_by_brand_name | None)"""
-    if domain in owned_lookup:
-        return "owned", owned_lookup[domain]
-    if domain in {d for (d, _da) in OUTLET_DOMAINS}:
+    if domain in cfg.owned_lookup:
+        return "owned", cfg.owned_lookup[domain]
+    if domain in outlet_domains:
         return "earned", None
-    if domain in config.SOCIAL_DOMAINS:
+    if domain in SOCIAL_DOMAINS:
         return "social", None
     return "other", None
 
 
-def keyword_for_prompt(prompt: str) -> str:
-    pl = prompt.lower()
-    for pattern, kw in config.KEYWORD_RULES:
-        if re.search(pattern, pl):
-            return kw
-    return config.KEYWORDS[3]  # best outdoor furniture brands
-
-
-def alias_regex(aliases: list[str]) -> re.Pattern:
-    alts = sorted((re.escape(a) for a in aliases), key=len, reverse=True)
-    return re.compile(r"(?<![\w&])(" + "|".join(alts) + r")(?![\w])", re.IGNORECASE)
-
-
-JUNK_TOKENS = {
-    "com", "www", "http", "https", "org", "html", "sources", "cited",
-    "pages", "consulted", "watch", "sites", "article", "articles",
-}
-BRAND_WORDS = {
-    w.lower()
-    for meta in list(config.BRANDS.values())
-    for a in meta["aliases"]
-    for w in re.split(r"[\s.\-]+", a) if len(w) > 2
-} | {
-    w.lower()
-    for aliases in config.ECOSYSTEM_ORGS.values()
-    for a in aliases
-    for w in re.split(r"[\s.\-]+", a) if len(w) > 2
-}
-
-
-def extract_key_terms(text: str) -> Counter:
+def extract_key_terms(text, cfg: ClientConfig):
     # strip markdown link labels + bare domain fragments before tokenizing
     text = re.sub(r"\[[^\]]*\]", " ", text)
     text = re.sub(r"\b[\w-]+\.(com|org|net|co|io)\b", " ", text)
     terms = Counter()
     tl = text.lower()
-    for vocab in config.KEY_TERM_VOCAB:
+    for vocab in cfg.key_term_vocab:
         n = len(re.findall(r"(?<!\w)" + re.escape(vocab.lower()) + r"(?!\w)", tl))
         if n:
             terms[vocab] += n
     # statistical bigrams over stopword-filtered tokens
     tokens = [t for t in re.findall(r"[a-z][a-z\-]{2,}", tl)
-              if t not in config.STOPWORDS and t not in JUNK_TOKENS]
+              if t not in STOPWORDS and t not in JUNK_TOKENS]
     bigrams = Counter(zip(tokens, tokens[1:]))
-    vocab_lower = {v.lower() for v in config.KEY_TERM_VOCAB}
+    vocab_lower = {v.lower() for v in cfg.key_term_vocab}
     for (a, b), n in bigrams.items():
         if n < 2 or f"{a} {b}" in vocab_lower:
             continue
-        if a in BRAND_WORDS or b in BRAND_WORDS:  # brand names live in org mentions, not terms
+        if a in cfg.brand_words or b in cfg.brand_words:  # brand names live in org mentions, not terms
             continue
         terms[f"{a} {b}"] += n
     return terms
 
 
-# ------------------------------------------------------------------ seeding
-
-OUTLET_DOMAINS = [(v[0], v[1]) for v in config.MEDIA_DB.values()]
-
-
-def seed(cur):
-    for name in config.KEYWORDS:
-        cur.execute("INSERT INTO keyword_categories(name) VALUES (%s) ON CONFLICT DO NOTHING", (name,))
-
-    for name, meta in config.BRANDS.items():
-        cur.execute(
-            """INSERT INTO brands(name, role, aliases, owned_domains) VALUES (%s,%s,%s,%s)
-               ON CONFLICT (name) DO UPDATE SET role=EXCLUDED.role,
-                 aliases=EXCLUDED.aliases, owned_domains=EXCLUDED.owned_domains""",
-            (name, meta["role"], meta["aliases"], meta["owned_domains"]))
-    for name, aliases in config.ECOSYSTEM_ORGS.items():
-        cur.execute(
-            """INSERT INTO brands(name, role, aliases) VALUES (%s,'ecosystem',%s)
-               ON CONFLICT (name) DO NOTHING""", (name, aliases))
-
-    for outlet, (domain, da, otype, journos) in config.MEDIA_DB.items():
-        cur.execute(
-            """INSERT INTO media_outlets(name, domain, domain_authority, outlet_type)
-               VALUES (%s,%s,%s,%s) ON CONFLICT (domain) DO UPDATE
-               SET domain_authority=EXCLUDED.domain_authority RETURNING id""",
-            (outlet, domain, da, otype))
-        outlet_id = cur.fetchone()[0]
-        for j in journos:
-            cur.execute(
-                """INSERT INTO journalists(name, outlet_id) VALUES (%s,%s)
-                   ON CONFLICT (name, outlet_id) DO NOTHING""", (j, outlet_id))
-
-
 def load_maps(cur):
-    cur.execute("SELECT id, name FROM keyword_categories")
-    kw_ids = {n: i for i, n in cur.fetchall()}
-    cur.execute("SELECT id, name, role, aliases, owned_domains FROM brands")
-    brands = {n: {"id": i, "role": r, "aliases": a, "owned": od}
-              for i, n, r, a, od in cur.fetchall()}
-    cur.execute("SELECT j.id, j.name, o.domain FROM journalists j JOIN media_outlets o ON o.id=j.outlet_id")
-    journo_ids = {(n, d): i for i, n, d in cur.fetchall()}
+    """Global reference maps (not client-scoped)."""
     cur.execute("SELECT id, domain FROM media_outlets")
     outlet_ids = {d: i for i, d in cur.fetchall()}
-    return kw_ids, brands, journo_ids, outlet_ids
+    # byline lookup from the crawled articles table (normalized url -> ids)
+    cur.execute(
+        "SELECT url, journalist_id, id FROM articles WHERE fetch_status = 'ok'")
+    article_lookup = {u: (jid, aid) for u, jid, aid in cur.fetchall()}
+    return outlet_ids, article_lookup
 
 
 # ------------------------------------------------------------------ pipeline
 
-def run(csv_path: str):
+def run(client_slug, csv_path):
     analyzer = get_analyzer()
     conn = psycopg2.connect(config.DB_DSN)
     cur = conn.cursor()
-    seed(cur)
-    conn.commit()
-    kw_ids, brands, journo_ids, outlet_ids = load_maps(cur)
+    cfg = load_client(cur, client_slug)
+    outlet_ids, article_lookup = load_maps(cur)
+    outlet_domains = set(outlet_ids)
+    print(f"Ingesting for client '{cfg.slug}' (target: {cfg.target_brand})")
 
-    owned_lookup = {}
-    for name, b in brands.items():
-        for d in (b["owned"] or []):
-            owned_lookup[d] = name
-    brand_res = {n: alias_regex(b["aliases"] or [n]) for n, b in brands.items()}
-    article_journo = {(d, p): j for (d, p), (_o, j, _t) in ARTICLES.items()}
-
-    domain_cache: dict[str, int] = {}
-    prompt_cache: dict[str, int] = {}
+    domain_cache = {}
+    prompt_cache = {}
     n_rows = n_urls = n_mentions = 0
 
     with open(csv_path, newline="") as f:
@@ -195,18 +120,18 @@ def run(csv_path: str):
             ptext = row["prompt"].strip()
             if ptext not in prompt_cache:
                 cur.execute(
-                    """INSERT INTO prompts(text, keyword_category_id) VALUES (%s,%s)
-                       ON CONFLICT (text) DO UPDATE SET keyword_category_id=EXCLUDED.keyword_category_id
+                    """INSERT INTO prompts(client_id, text, keyword_category_id) VALUES (%s,%s,%s)
+                       ON CONFLICT (client_id, text) DO UPDATE SET keyword_category_id=EXCLUDED.keyword_category_id
                        RETURNING id""",
-                    (ptext, kw_ids[keyword_for_prompt(ptext)]))
+                    (cfg.client_id, ptext, cfg.keyword_for_prompt(ptext)))
                 prompt_cache[ptext] = cur.fetchone()[0]
 
             cur.execute(
-                """INSERT INTO llm_runs(prompt_id, engine, run_date, response_text)
-                   VALUES (%s,%s,%s,%s)
+                """INSERT INTO llm_runs(client_id, prompt_id, engine, run_date, response_text)
+                   VALUES (%s,%s,%s,%s,%s)
                    ON CONFLICT (prompt_id, engine, run_date)
                    DO UPDATE SET response_text=EXCLUDED.response_text RETURNING id""",
-                (prompt_cache[ptext], vendor, run_date, text))
+                (cfg.client_id, prompt_cache[ptext], vendor, run_date, text))
             run_id = cur.fetchone()[0]
             cur.execute("DELETE FROM cited_urls WHERE run_id=%s", (run_id,))
             cur.execute("DELETE FROM brand_mentions WHERE run_id=%s", (run_id,))
@@ -226,29 +151,28 @@ def run(csv_path: str):
                 if not dom or "." not in dom:
                     continue
                 if dom not in domain_cache:
-                    mtype, owned_by = classify_domain(dom, owned_lookup)
+                    mtype, owned_by = classify_domain(dom, cfg, outlet_domains)
                     cur.execute(
-                        """INSERT INTO cited_domains(domain, media_type, outlet_id, owned_by_brand_id)
-                           VALUES (%s,%s,%s,%s)
-                           ON CONFLICT (domain) DO UPDATE SET media_type=EXCLUDED.media_type
+                        """INSERT INTO cited_domains(client_id, domain, media_type, outlet_id, owned_by_brand_id)
+                           VALUES (%s,%s,%s,%s,%s)
+                           ON CONFLICT (client_id, domain) DO UPDATE SET media_type=EXCLUDED.media_type
                            RETURNING id""",
-                        (dom, mtype, outlet_ids.get(dom),
-                         brands[owned_by]["id"] if owned_by else None))
+                        (cfg.client_id, dom, mtype, outlet_ids.get(dom),
+                         cfg.brands[owned_by]["id"] if owned_by else None))
                     domain_cache[dom] = cur.fetchone()[0]
-                jname = article_journo.get((dom, parsed.path))
-                jid = journo_ids.get((jname, dom)) if jname else None
+                jid, aid = article_lookup.get(normalize_url(url), (None, None))
                 cur.execute(
-                    """INSERT INTO cited_urls(run_id, url, domain_id, path, journalist_id)
-                       VALUES (%s,%s,%s,%s,%s)""",
-                    (run_id, url, domain_cache[dom], parsed.path, jid))
+                    """INSERT INTO cited_urls(run_id, url, domain_id, path, journalist_id, article_id)
+                       VALUES (%s,%s,%s,%s,%s,%s)""",
+                    (run_id, url, domain_cache[dom], parsed.path, jid, aid))
                 n_urls += 1
 
             # ---- brand / org mentions + sentiment
             # (detect on URL-stripped text so a polywood.com citation
             #  doesn't count as a prose mention)
             text_no_urls = URL_RE.sub(" ", text)
-            for name, b in brands.items():
-                hits = list(brand_res[name].finditer(text_no_urls))
+            for name, b in cfg.brands.items():
+                hits = list(cfg.brand_regexes[name].finditer(text_no_urls))
                 if not hits:
                     continue
                 cur.execute(
@@ -264,7 +188,7 @@ def run(csv_path: str):
                         (run_id, b["id"], label, score, analyzer.name))
 
             # ---- key terms
-            for term, freq in extract_key_terms(text_no_urls).most_common(12):
+            for term, freq in extract_key_terms(text_no_urls, cfg).most_common(12):
                 cur.execute("INSERT INTO key_terms(run_id, term, freq) VALUES (%s,%s,%s)",
                             (run_id, term, freq))
 
@@ -277,11 +201,13 @@ def run(csv_path: str):
 
     # ---- summary from views
     cur.execute("""SELECT brand, engine, ROUND(AVG(visibility_pct),1)
-                   FROM v_visibility GROUP BY brand, engine ORDER BY 3 DESC LIMIT 9""")
+                   FROM v_visibility WHERE client_id=%s
+                   GROUP BY brand, engine ORDER BY 3 DESC LIMIT 9""", (cfg.client_id,))
     print("\nTop avg visibility (brand x engine):")
     for b, e, v in cur.fetchall():
         print(f"  {b:28s} {e:8s} {v}%")
-    cur.execute("SELECT brand, sov_pct FROM v_share_of_voice ORDER BY sov_pct DESC")
+    cur.execute("""SELECT brand, sov_pct FROM v_share_of_voice
+                   WHERE client_id=%s ORDER BY sov_pct DESC""", (cfg.client_id,))
     print("\nShare of voice:")
     for b, s in cur.fetchall():
         print(f"  {b:28s} {s}%")
@@ -289,4 +215,8 @@ def run(csv_path: str):
 
 
 if __name__ == "__main__":
-    run(sys.argv[1] if len(sys.argv) > 1 else "../data/llm_export.csv")
+    ap = argparse.ArgumentParser(description="AI Pulse CSV ingestion")
+    ap.add_argument("--client", required=True, help="client slug (see clients table)")
+    ap.add_argument("csv_path", nargs="?", default="../data/llm_export.csv")
+    args = ap.parse_args()
+    run(args.client, args.csv_path)
