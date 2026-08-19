@@ -80,6 +80,11 @@ export default function FanoutSearch({ slug, initialQ, facetId }) {
         <div className="mt-3 rounded-md bg-[var(--page)] p-3">
           <p className="text-xs font-semibold text-[var(--text-primary)]">
             {result.created.length} prompts added ({result.skipped} already existed)
+            {result.generator === "templates" && (
+              <span className="ml-1.5 font-normal text-[var(--text-muted)]">
+                · template phrasing — set ANTHROPIC_API_KEY for Claude-generated variants
+              </span>
+            )}
           </p>
           <ul className="mt-1.5 space-y-1">
             {result.created.map((c) => (
@@ -93,7 +98,8 @@ export default function FanoutSearch({ slug, initialQ, facetId }) {
       )}
       {result && !result.error && result.created?.length === 0 && (
         <p className="mt-2 text-xs text-[var(--text-muted)]">
-          All fan-out prompts for this keyword already exist in the library.
+          Nothing new to add — this keyword was already fanned out; its prompts
+          are in the coverage table below.
         </p>
       )}
     </div>
