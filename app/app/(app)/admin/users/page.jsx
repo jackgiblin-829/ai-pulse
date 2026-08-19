@@ -4,6 +4,8 @@ import UsersAdmin from "@/components/UsersAdmin";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Users | AI Pulse" };
+
 export default async function AdminUsers() {
   const session = await requireAdmin();
   const users = await q(

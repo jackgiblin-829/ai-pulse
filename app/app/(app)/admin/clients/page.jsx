@@ -4,6 +4,8 @@ import { adminClientList } from "@/lib/clientConfig";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Manage clients | AI Pulse" };
+
 export default async function AdminClients() {
   await requireAdmin();
   const clients = await adminClientList();

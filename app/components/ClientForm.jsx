@@ -129,7 +129,7 @@ export default function ClientForm({ initial }) {
                   onChange={(e) => updateRow(setCompetitors)(i, "owned_domains", e.target.value)} />
               </label>
             </div>
-            <button type="button" className={`${smallBtn} mb-0.5`} onClick={() => removeRow(setCompetitors)(i)}>
+            <button type="button" className={`${smallBtn} mb-0.5`} aria-label="Remove competitor" onClick={() => removeRow(setCompetitors)(i)}>
               ✕
             </button>
           </div>
@@ -155,7 +155,7 @@ export default function ClientForm({ initial }) {
                   onChange={(e) => updateRow(setEcosystem)(i, "aliases", e.target.value)} />
               </label>
             </div>
-            <button type="button" className={`${smallBtn} mb-0.5`} onClick={() => removeRow(setEcosystem)(i)}>
+            <button type="button" className={`${smallBtn} mb-0.5`} aria-label="Remove org" onClick={() => removeRow(setEcosystem)(i)}>
               ✕
             </button>
           </div>
@@ -198,9 +198,9 @@ export default function ClientForm({ initial }) {
               </select>
             </label>
             <div className="mb-0.5 flex gap-1">
-              <button type="button" className={smallBtn} disabled={i === 0} onClick={() => moveRule(i, -1)}>↑</button>
-              <button type="button" className={smallBtn} disabled={i === rules.length - 1} onClick={() => moveRule(i, 1)}>↓</button>
-              <button type="button" className={smallBtn} onClick={() => removeRow(setRules)(i)}>✕</button>
+              <button type="button" className={smallBtn} aria-label="Move rule up" disabled={i === 0} onClick={() => moveRule(i, -1)}>↑</button>
+              <button type="button" className={smallBtn} aria-label="Move rule down" disabled={i === rules.length - 1} onClick={() => moveRule(i, 1)}>↓</button>
+              <button type="button" className={smallBtn} aria-label="Remove rule" onClick={() => removeRow(setRules)(i)}>✕</button>
             </div>
           </div>
         ))}

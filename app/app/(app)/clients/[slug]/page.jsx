@@ -18,6 +18,12 @@ import { OrgMentionsTable, DomainsTable, OwnedUrlsTable, OutletsTable } from "@/
 
 export const dynamic = "force-dynamic";
 
+export async function generateMetadata({ params }) {
+  const { slug } = await params;
+  const client = await getClientBySlug(slug);
+  return { title: client ? `${client.name} | AI Pulse` : "AI Pulse" };
+}
+
 export default async function Dashboard({ params, searchParams }) {
   const [{ slug }, sp] = await Promise.all([params, searchParams]);
   const client = await getClientBySlug(slug);
@@ -31,6 +37,37 @@ export default async function Dashboard({ params, searchParams }) {
   const { brand, kpis, matrix, trend, media, sov, keywordSov, sentiment,
           terms, orgs, domains, ownedUrls, outlets, journalists, bounds,
           brandColors } = report;
+
+  // No runs ingested yet — guidance beats a grid of empty widgets.
+  if (!bounds.max) {
+    return (
+      <main className="mx-auto max-w-7xl px-6 py-8">
+        <header className="mb-6">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+            829 Studios · AI Pulse
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold">
+            {brand} — Generative Engine Visibility
+          </h1>
+        </header>
+        <div className="card mx-auto max-w-xl p-10 text-center">
+          <h2 className="text-base font-semibold">No data ingested yet</h2>
+          <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+            {client.name} is configured and ready. Run the pipeline against an
+            engine export to light this dashboard up:
+          </p>
+          <pre className="mt-4 overflow-x-auto rounded-md bg-[var(--page)] p-3 text-left font-mono text-xs">
+{`python ingest.py --client ${client.slug} export.csv
+python enrich_bylines.py --client ${client.slug}`}
+          </pre>
+          <p className="mt-4 text-xs text-[var(--text-muted)]">
+            See <a href="/how-it-works" className="text-[var(--accent)] underline">How it works</a> for
+            the full flow, or adjust the configuration under Manage clients.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   const sovItems = sov.map((s) => ({ name: s.brand, pct: s.pct, color: brandColors[s.brand] ?? GRAY }));
   const kwItems = keywordSov.map((k, i) => ({ name: k.keyword, pct: k.pct, color: SLOTS[i] ?? GRAY }));

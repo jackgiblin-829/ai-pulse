@@ -18,7 +18,8 @@ export default function MediaListTable({ rows, clientSlug }) {
   }
 
   return (
-    <table className="w-full">
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[28rem]">
       <thead>
         <tr className="text-left text-xs text-[var(--text-muted)]">
           <th className="py-2 font-medium">Journalist</th>
@@ -62,5 +63,6 @@ export default function MediaListTable({ rows, clientSlug }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }

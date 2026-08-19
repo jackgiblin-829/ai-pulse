@@ -25,6 +25,16 @@ export default function DateRangePicker({ engine, range, basePath, bounds }) {
       : undefined
   );
   const ref = useRef(null);
+  const [months, setMonths] = useState(2);
+
+  // One month on narrow screens so the popover fits the viewport.
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 680px)");
+    const update = () => setMonths(mq.matches ? 2 : 1);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -66,10 +76,10 @@ export default function DateRangePicker({ engine, range, basePath, bounds }) {
         {label} ▾
       </button>
       {open && (
-        <div className="card absolute right-0 top-full z-20 mt-2 p-4 shadow-lg">
+        <div className="card absolute left-0 top-full z-20 mt-2 max-w-[calc(100vw-2rem)] overflow-x-auto p-4 shadow-lg sm:left-auto sm:right-0">
           <DayPicker
             mode="range"
-            numberOfMonths={2}
+            numberOfMonths={months}
             selected={selected}
             onSelect={setSelected}
             defaultMonth={

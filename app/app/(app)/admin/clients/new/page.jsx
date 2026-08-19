@@ -3,6 +3,8 @@ import ClientForm from "@/components/ClientForm";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "New client | AI Pulse" };
+
 export default async function NewClient() {
   await requireAdmin();
   return (

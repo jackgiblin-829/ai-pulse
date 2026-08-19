@@ -2,6 +2,8 @@ import LoginForm from "@/components/LoginForm";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Sign in | AI Pulse" };
+
 export default async function LoginPage({ searchParams }) {
   const sp = await searchParams;
   const next = typeof sp?.next === "string" ? sp.next : "/";

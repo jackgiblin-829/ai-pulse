@@ -1,8 +1,19 @@
 import Link from "next/link";
 import { requireSession } from "@/lib/auth";
+import NavLinks from "@/components/NavLinks";
 
 export default async function AppLayout({ children }) {
   const session = await requireSession();
+  const links = [
+    { href: "/", label: "Dashboard" },
+    { href: "/how-it-works", label: "How it works" },
+    ...(session.role === "admin"
+      ? [
+          { href: "/admin/clients", label: "Manage clients" },
+          { href: "/admin/users", label: "Users" },
+        ]
+      : []),
+  ];
   return (
     <>
       <nav className="border-b border-[var(--border)] bg-[var(--surface-1)]">
@@ -11,19 +22,10 @@ export default async function AppLayout({ children }) {
             <Link href="/" className="text-sm font-semibold tracking-tight">
               AI&nbsp;Pulse
             </Link>
-            {session.role === "admin" && (
-              <div className="flex items-center gap-3 text-xs text-[var(--text-secondary)]">
-                <Link href="/admin/clients" className="hover:text-[var(--text-primary)]">
-                  Clients
-                </Link>
-                <Link href="/admin/users" className="hover:text-[var(--text-primary)]">
-                  Users
-                </Link>
-              </div>
-            )}
+            <NavLinks links={links} />
           </div>
           <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
-            <span>{session.name}</span>
+            <span className="hidden whitespace-nowrap sm:inline">{session.name}</span>
             <form action="/api/auth/logout" method="post">
               <button
                 type="submit"

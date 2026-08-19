@@ -5,6 +5,12 @@ import MediaListTable from "@/components/MediaListTable";
 
 export const dynamic = "force-dynamic";
 
+export async function generateMetadata({ params }) {
+  const { slug } = await params;
+  const client = await getClientBySlug(slug);
+  return { title: client ? `${client.name} media list | AI Pulse` : "AI Pulse" };
+}
+
 export default async function MediaListPage({ params }) {
   const { slug } = await params;
   const client = await getClientBySlug(slug);

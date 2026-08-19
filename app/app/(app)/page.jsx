@@ -4,6 +4,8 @@ import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Clients | AI Pulse" };
+
 const fmt = new Intl.DateTimeFormat("en-US", {
   month: "short", day: "numeric", year: "numeric", timeZone: "UTC",
 });

@@ -13,7 +13,8 @@ const td = "py-2 text-sm border-t border-[var(--grid)]";
 export function OrgMentionsTable({ rows }) {
   return (
     <div className="max-h-80 overflow-y-auto">
-      <table className="w-full">
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-[28rem]">
         <thead className="sticky top-0 bg-[var(--surface-1)]">
           <tr><Th>Organization</Th><Th>Type</Th><Th right>Mentions</Th><Th right>Share</Th></tr>
         </thead>
@@ -33,12 +34,14 @@ export function OrgMentionsTable({ rows }) {
         </tbody>
       </table>
     </div>
+    </div>
   );
 }
 
 export function DomainsTable({ rows }) {
   return (
-    <table className="w-full">
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[28rem]">
       <thead>
         <tr><Th>Domain</Th><Th>Type</Th><Th right>Citations</Th><Th right>Unique URLs</Th></tr>
       </thead>
@@ -57,12 +60,14 @@ export function DomainsTable({ rows }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
 export function OwnedUrlsTable({ rows }) {
   return (
-    <table className="w-full">
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[28rem]">
       <thead><tr><Th>URL</Th><Th right>Citations</Th></tr></thead>
       <tbody>
         {rows.map((r) => (
@@ -75,12 +80,14 @@ export function OwnedUrlsTable({ rows }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
 export function OutletsTable({ rows }) {
   return (
-    <table className="w-full">
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[28rem]">
       <thead><tr><Th>Outlet</Th><Th>Domain</Th><Th right>DA</Th><Th right>Citations</Th></tr></thead>
       <tbody>
         {rows.map((r) => (
@@ -93,5 +100,6 @@ export function OutletsTable({ rows }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
