@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 
-export default function JournalistsTable({ rows }) {
+export default function JournalistsTable({ rows, clientSlug }) {
   const [added, setAdded] = useState(
     () => new Set(rows.filter((r) => r.in_media_list).map((r) => r.id))
   );
@@ -10,7 +10,7 @@ export default function JournalistsTable({ rows }) {
   async function toggle(id) {
     setBusy(id);
     const isAdded = added.has(id);
-    const res = await fetch("/api/media-list", {
+    const res = await fetch(`/api/clients/${clientSlug}/media-list`, {
       method: isAdded ? "DELETE" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ journalist_id: id }),

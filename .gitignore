@@ -2,3 +2,5 @@ node_modules/
 .next/
 __pycache__/
 .venv/
+.env.local
+.env

@@ -12,18 +12,16 @@ export const SLOTS = [
 ];
 export const GRAY = "#898781"; // muted — used for "Other"/overflow
 
-// Color follows the entity: fixed brand -> slot assignment.
-export const BRAND_COLORS = {
-  POLYWOOD: SLOTS[0],
-  "Trex Outdoor Furniture": SLOTS[1],
-  "Highwood USA": SLOTS[2],
-  "Berlin Gardens": SLOTS[3],
-  Breezesta: SLOTS[4],
-  "C.R. Plastic Products": SLOTS[5],
-  "Loll Designs": SLOTS[6],
-  LuxCraft: SLOTS[7],
-};
-export const brandColor = (name) => BRAND_COLORS[name] ?? GRAY;
+// Color follows the entity: deterministic brand -> slot assignment per
+// client. `brands` comes from trackedBrands() (target first, then
+// competitors by sort_order), so the mapping is stable across loads.
+export function assignBrandColors(brands) {
+  const colors = {};
+  brands.forEach((b, i) => {
+    colors[b.name] = SLOTS[i] ?? GRAY;
+  });
+  return colors;
+}
 
 export const ENGINE_COLORS = { chatgpt: SLOTS[0], gemini: SLOTS[1], claude: SLOTS[2] };
 export const ENGINE_LABELS = { chatgpt: "ChatGPT", gemini: "Gemini", claude: "Claude" };

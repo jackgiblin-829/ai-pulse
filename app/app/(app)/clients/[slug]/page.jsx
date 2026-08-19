@@ -1,5 +1,8 @@
-import * as Q from "@/lib/queries";
-import { brandColor, SLOTS, GRAY } from "@/lib/palette";
+import { notFound } from "next/navigation";
+import { getClientBySlug } from "@/lib/queries";
+import { getReport } from "@/lib/report";
+import { parseEngine, parseRange, rangeLabel } from "@/lib/dates";
+import { SLOTS, GRAY } from "@/lib/palette";
 import ChartCard from "@/components/ChartCard";
 import Filters from "@/components/Filters";
 import StatTile from "@/components/StatTile";
@@ -10,34 +13,26 @@ import SovPie from "@/components/charts/SovPie";
 import SentimentChart from "@/components/charts/SentimentChart";
 import KeyTerms from "@/components/KeyTerms";
 import JournalistsTable from "@/components/JournalistsTable";
+import ExportButton from "@/components/ExportButton";
 import { OrgMentionsTable, DomainsTable, OwnedUrlsTable, OutletsTable } from "@/components/Tables";
 
 export const dynamic = "force-dynamic";
 
-export default async function Dashboard({ searchParams }) {
-  const sp = await searchParams;
-  const engine = ["all", "chatgpt", "gemini", "claude"].includes(sp?.engine) ? sp.engine : "all";
-  const days = ["30", "60", "90", "all"].includes(sp?.days) ? sp.days : "90";
-  const brand = Q.TARGET;
+export default async function Dashboard({ params, searchParams }) {
+  const [{ slug }, sp] = await Promise.all([params, searchParams]);
+  const client = await getClientBySlug(slug);
+  if (!client) notFound();
 
-  const [kpis, matrix, trend, media, sov, keywordSov, sentiment, terms, orgs, domains, ownedUrls, outlets, journalists] =
-    await Promise.all([
-      Q.kpis(days, brand),
-      Q.visibilityMatrix(days),
-      Q.visibilityTrend(days, brand),
-      Q.mediaStrategy(days, engine),
-      Q.shareOfVoice(days, engine),
-      Q.keywordShareOfVoice(days, engine, brand),
-      Q.sentimentOverTime(days, engine, brand),
-      Q.topKeyTerms(days, engine),
-      Q.orgMentions(days, engine),
-      Q.topDomains(days, engine),
-      Q.topOwnedUrls(days, engine, brand),
-      Q.topOutlets(days, engine),
-      Q.topJournalists(days, engine),
-    ]);
+  const engine = parseEngine(sp);
+  const range = parseRange(sp);
+  const basePath = `/clients/${client.slug}`;
 
-  const sovItems = sov.map((s) => ({ name: s.brand, pct: s.pct, color: brandColor(s.brand) }));
+  const report = await getReport({ client, engine, range });
+  const { brand, kpis, matrix, trend, media, sov, keywordSov, sentiment,
+          terms, orgs, domains, ownedUrls, outlets, journalists, bounds,
+          brandColors } = report;
+
+  const sovItems = sov.map((s) => ({ name: s.brand, pct: s.pct, color: brandColors[s.brand] ?? GRAY }));
   const kwItems = keywordSov.map((k, i) => ({ name: k.keyword, pct: k.pct, color: SLOTS[i] ?? GRAY }));
 
   return (
@@ -54,7 +49,7 @@ export default async function Dashboard({ searchParams }) {
             {matrix.length ? `${sov.length} tracked brands · ChatGPT, Gemini & Claude` : "No data ingested yet"}
           </p>
         </div>
-        <Filters engine={engine} days={days} />
+        <Filters engine={engine} range={range} basePath={basePath} bounds={bounds} />
       </header>
 
       {/* KPI row */}
@@ -120,13 +115,17 @@ export default async function Dashboard({ searchParams }) {
         <ChartCard title="Top Cited Media Outlets" subtitle="Earned-media outlets by citation count">
           <OutletsTable rows={outlets} />
         </ChartCard>
-        <ChartCard title="Top Cited Journalists" subtitle="Outreach targets — bylines behind cited articles">
-          <JournalistsTable rows={journalists} />
+        <ChartCard
+          title="Top Cited Journalists"
+          subtitle="Outreach targets — bylines behind cited articles"
+          action={<ExportButton slug={client.slug} />}
+        >
+          <JournalistsTable rows={journalists} clientSlug={client.slug} />
         </ChartCard>
       </div>
 
       <footer className="mt-8 text-center text-xs text-[var(--text-muted)]">
-        AI Pulse · internal GEO reporting · data window: {days === "all" ? "all time" : `last ${days} days`} ·
+        AI Pulse · internal GEO reporting · data window: {rangeLabel(range)} ·
         engine: {engine === "all" ? "all engines" : engine}
       </footer>
     </main>

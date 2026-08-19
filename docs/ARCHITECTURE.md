@@ -96,7 +96,15 @@ text with color swatches carrying identity.
 ## 6. Production hardening checklist
 
 - Prompt runner: scheduled jobs per engine with retries + raw response archiving (S3) before ingestion.
-- Real media DB: swap `media_articles.py` for Muck Rack/Cision byline lookup; refresh DA scores monthly (Moz API).
-- Auth: wrap the app in SSO (e.g. next-auth + Google Workspace) before exposing beyond localhost.
-- Multi-client: add a `clients` table and scope `brands`/`prompts` by client_id; config.py becomes a per-client row.
+- ~~Real media DB~~ **Done**: `enrich_bylines.py` crawls cited URLs for real bylines
+  (JSON-LD -> meta tags -> DOM patterns), populating the global `articles` +
+  `journalists` tables. Remaining: refresh DA scores monthly (Moz API), and
+  journalist contact enrichment (beat/email) if a Muck Rack/Cision key appears.
+- ~~Auth~~ **Done**: email+password accounts (`users` table, bcrypt), jose JWT
+  session cookie verified in Edge middleware, admin/member roles, user
+  management at /admin/users. Upgrade path to Google SSO stays open.
+- ~~Multi-client~~ **Done**: `clients` table; brands/prompts/runs/keyword
+  taxonomy/cited_domains/media lists are client-scoped; config lives in
+  Postgres, written by the /admin/clients onboarding form (seed_client.py
+  rebuilds the demo). Views and every dashboard query carry client predicates.
 - Entity discovery: today the ecosystem gazetteer is curated; add an NER pass (spaCy `en_core_web_trf` ORG entities) to surface unknown orgs for review.
