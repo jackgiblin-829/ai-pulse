@@ -157,9 +157,13 @@ export default async function HowItWorks() {
             the whole view to matching prompts, and generates an intent spread
             of candidate prompts (including brand-vs-competitor comparisons).
             Nothing enters the library automatically — check the candidates
-            worth measuring and hit <em>Add to prompt library</em>. They're
+            worth measuring and hit <em>Add to prompt library</em>. The keyword
+            itself becomes a new service-area facet with the added prompts
+            grouped under it, so the fan-out is immediately refinable. They're
             measured on the next collection run, so coverage questions become
-            trackable the moment you think of them.
+            trackable the moment you think of them. (Facets can also be managed
+            by hand under Manage clients — edits reclassify the whole library
+            on save.)
           </p>
         </Section>
 

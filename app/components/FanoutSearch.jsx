@@ -177,7 +177,8 @@ export default function FanoutSearch({ slug, initialQ, facetId }) {
                 Dismiss
               </button>
               <p className="text-xs text-[var(--text-muted)]">
-                Added prompts are measured on the next collection run.
+                Selected prompts are grouped under a new “{preview.keyword}”
+                service-area facet and measured on the next collection run.
               </p>
             </div>
           ) : (
@@ -195,6 +196,10 @@ export default function FanoutSearch({ slug, initialQ, facetId }) {
             {committed.skipped > 0 && ` (${committed.skipped} already existed)`}
           </p>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            {committed.facet && (
+              <>Grouped under the new <strong>{committed.facet}</strong> facet
+              (see the refinement chips below). </>
+            )}
             Review or refine them anytime in the{" "}
             <a href={`/clients/${slug}/prompts`} className="text-[var(--accent)] underline">
               Prompts tab

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { pool } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
+import { reclassifyClientPrompts } from "@/lib/classifyPrompt";
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,48}$/;
 
@@ -145,6 +146,10 @@ export async function saveClient(prevState, formData) {
         `INSERT INTO key_term_vocab (client_id, term) VALUES ($1,$2)
          ON CONFLICT (client_id, term) DO NOTHING`, [clientId, term]);
     }
+
+    // New/changed facets and keyword rules apply to the existing prompt
+    // library immediately, not just on the next ingest.
+    await reclassifyClientPrompts((text, params) => conn.query(text, params), clientId);
 
     await conn.query("COMMIT");
   } catch (e) {

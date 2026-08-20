@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { q } from "@/lib/db";
-import { getClientBySlug, facetsForClient } from "@/lib/queries";
+import { getClientBySlug } from "@/lib/queries";
 import { matchRules } from "@/lib/classifyPrompt";
 
 // Template fallback — number-agnostic phrasing so plural and singular
@@ -88,7 +88,6 @@ export async function POST(req, { params }) {
     return NextResponse.json({ error: "Keyword must be 3–80 characters" }, { status: 400 });
   }
 
-  const facets = await facetsForClient(client.id);
   const rules = await q(
     `SELECT pattern, keyword_category_id FROM keyword_rules
      WHERE client_id = $1 ORDER BY position`, [client.id]);
@@ -98,7 +97,6 @@ export async function POST(req, { params }) {
   const categoryFor = (text) =>
     matchRules(text, rules, "keyword_category_id") ??
     rules[rules.length - 1]?.keyword_category_id ?? null;
-  const facetFor = (text) => matchRules(text, facets, "id");
 
   // ---- commit: insert the user's selection ---------------------------
   if (Array.isArray(body.add)) {
@@ -107,6 +105,20 @@ export async function POST(req, { params }) {
       .map((p) => ({ intent: p.intent, text: p.text.trim() }))
       .filter((p) => p.text.length >= 10 && p.text.length <= 300)
       .slice(0, 20);
+
+    // The fanned-out keyword becomes its own service-area facet, and the
+    // committed prompts are grouped under it — so a fan-out is immediately
+    // refinable on this page. Appended after existing facets so curated
+    // rules keep their priority for everything else.
+    const facetName = kw.charAt(0).toUpperCase() + kw.slice(1);
+    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const [facet] = await q(
+      `INSERT INTO facets (client_id, name, pattern, position)
+       VALUES ($1, $2, $3, COALESCE((SELECT MAX(position) + 1 FROM facets WHERE client_id = $1), 0))
+       ON CONFLICT (client_id, name) DO UPDATE SET pattern = EXCLUDED.pattern
+       RETURNING id, name`,
+      [client.id, facetName, escaped]);
+
     const created = [];
     let skipped = 0;
     for (const p of selection) {
@@ -115,11 +127,11 @@ export async function POST(req, { params }) {
          VALUES ($1, $2, $3, $4, $5, 'fanout', TRUE)
          ON CONFLICT (client_id, text) DO NOTHING
          RETURNING id`,
-        [client.id, p.text, categoryFor(p.text), p.intent, facetFor(p.text)]);
+        [client.id, p.text, categoryFor(p.text), p.intent, facet.id]);
       if (rows.length) created.push(p);
       else skipped++;
     }
-    return NextResponse.json({ keyword: kw, created, skipped });
+    return NextResponse.json({ keyword: kw, created, skipped, facet: facet.name });
   }
 
   // ---- preview: generate candidates, flag existing --------------------

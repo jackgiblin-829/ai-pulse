@@ -26,6 +26,41 @@ export function matchRules(text, rules, key) {
   return null;
 }
 
+// Re-run facet + keyword-category classification across a client's whole
+// prompt library. Called after the onboarding form saves rule changes so
+// new facets/rules apply to existing prompts immediately (the pipeline
+// would otherwise only reclassify on the next ingest). `exec` is a query
+// runner — pass a transaction client's query fn to run inside it.
+export async function reclassifyClientPrompts(exec, clientId) {
+  const rules = (await exec(
+    `SELECT pattern, keyword_category_id FROM keyword_rules
+     WHERE client_id = $1 ORDER BY position`, [clientId])).rows;
+  const facets = (await exec(
+    `SELECT id, pattern FROM facets WHERE client_id = $1 ORDER BY position, id`,
+    [clientId])).rows;
+  const prompts = (await exec(
+    `SELECT id, text, keyword_category_id, facet_id FROM prompts WHERE client_id = $1`,
+    [clientId])).rows;
+
+  let changed = 0;
+  for (const p of prompts) {
+    const category =
+      matchRules(p.text, rules, "keyword_category_id") ??
+      rules[rules.length - 1]?.keyword_category_id ?? null;
+    // Facets: reassign only when a rule actively matches — a prompt that
+    // was hand-assigned (fan-out commits group under their root keyword
+    // even when the phrasing doesn't contain it) keeps its facet.
+    const facet = matchRules(p.text, facets, "id") ?? p.facet_id;
+    if (category !== p.keyword_category_id || facet !== p.facet_id) {
+      await exec(
+        "UPDATE prompts SET keyword_category_id = $1, facet_id = $2 WHERE id = $3",
+        [category, facet, p.id]);
+      changed++;
+    }
+  }
+  return changed;
+}
+
 // Full classification for a prompt: intent + the client's keyword
 // category (catch-all fallback) + facet.
 export async function classifyForClient(clientId, text) {
