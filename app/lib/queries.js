@@ -297,6 +297,19 @@ export async function topJournalists(f, limit = 12) {
     ORDER BY citations DESC LIMIT $${params.length}`, params);
 }
 
+// Counts for the dashboard's media-list call-to-action: how many distinct
+// journalists the engines have cited vs how many are already on the list.
+export async function mediaListSummary(clientId) {
+  const [row] = await q(`
+    SELECT
+      (SELECT COUNT(DISTINCT u.journalist_id)::int
+       FROM cited_urls u JOIN llm_runs r ON r.id = u.run_id
+       WHERE r.client_id = $1 AND u.journalist_id IS NOT NULL) AS cited_journalists,
+      (SELECT COUNT(*)::int FROM media_list_entries WHERE client_id = $1) AS on_list`,
+    [Number(clientId)]);
+  return row ?? { cited_journalists: 0, on_list: 0 };
+}
+
 // Full media list for a client, with export-grade fields.
 export async function mediaList(clientId) {
   return q(`

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getClientBySlug } from "@/lib/queries";
 import { getReport } from "@/lib/report";
@@ -36,8 +37,8 @@ export default async function Dashboard({ params, searchParams }) {
 
   const report = await getReport({ client, engine, range });
   const { brand, kpis, matrix, trend, media, sov, keywordSov, sentiment,
-          terms, orgs, domains, ownedUrls, outlets, journalists, bounds,
-          brandColors } = report;
+          terms, orgs, domains, ownedUrls, outlets, journalists,
+          mediaListSummary, bounds, brandColors } = report;
 
   // No runs ingested yet — guidance beats a grid of empty widgets.
   if (!bounds.max) {
@@ -110,7 +111,41 @@ python enrich_bylines.py --client ${client.slug}`}
         </ChartCard>
       </div>
 
-      {/* 2 — Media strategy + SOV */}
+      {/* 2 — PR intelligence: the tool's action layer. Journalists behind
+             the citations, with the media-list CTA — deliberately high on
+             the page: building the outreach list is the thing this tool
+             exists to make people do. */}
+      <div className="card mt-4 flex flex-wrap items-center justify-between gap-3 border-l-4 border-l-[var(--accent)] p-4">
+        <div>
+          <h2 className="text-sm font-semibold">Build the media list</h2>
+          <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
+            {mediaListSummary.cited_journalists.toLocaleString()} journalists are behind the articles
+            these engines cite{mediaListSummary.on_list
+              ? ` — ${mediaListSummary.on_list} already on ${brand}'s outreach list.`
+              : ` — none saved yet. Add the strongest targets below to start ${brand}'s outreach list.`}
+          </p>
+        </div>
+        <Link
+          href={`${basePath}/media-list`}
+          className="rounded-md bg-[var(--accent)] px-3.5 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+        >
+          Open media list{mediaListSummary.on_list ? ` (${mediaListSummary.on_list})` : ""}
+        </Link>
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <ChartCard
+          title="Top Cited Journalists"
+          subtitle="Outreach targets — bylines behind cited articles"
+          action={<ExportButton slug={client.slug} />}
+        >
+          <JournalistsTable rows={journalists} clientSlug={client.slug} />
+        </ChartCard>
+        <ChartCard title="Top Cited Media Outlets" subtitle="Earned-media outlets by citation count">
+          <OutletsTable rows={outlets} />
+        </ChartCard>
+      </div>
+
+      {/* 3 — Media strategy + SOV */}
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <ChartCard title="Media Strategy" subtitle="Cited URLs by media type">
           <MediaStrategyChart rows={media} />
@@ -120,7 +155,7 @@ python enrich_bylines.py --client ${client.slug}`}
         </ChartCard>
       </div>
 
-      {/* 3 — Keyword SOV + sentiment */}
+      {/* 4 — Keyword SOV + sentiment */}
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <ChartCard title="Share of Voice by Keywords" subtitle={`${brand} mentions by query category`}>
           <SovPie items={kwItems} />
@@ -130,7 +165,7 @@ python enrich_bylines.py --client ${client.slug}`}
         </ChartCard>
       </div>
 
-      {/* 4 — Key terms + org mentions */}
+      {/* 5 — Key terms + org mentions */}
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <ChartCard title="Key Terms" subtitle="Prominent attributes, materials & products across responses">
           <KeyTerms rows={terms} />
@@ -140,27 +175,13 @@ python enrich_bylines.py --client ${client.slug}`}
         </ChartCard>
       </div>
 
-      {/* 5 — Citations */}
+      {/* 6 — Citations */}
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <ChartCard title="Top Cited Domains" subtitle="All citation sources, classified">
           <DomainsTable rows={domains} />
         </ChartCard>
         <ChartCard title={`Top Cited Owned URLs`} subtitle={`${brand}-owned landing pages cited by engines`}>
           <OwnedUrlsTable rows={ownedUrls} />
-        </ChartCard>
-      </div>
-
-      {/* 6 — PR intelligence */}
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <ChartCard title="Top Cited Media Outlets" subtitle="Earned-media outlets by citation count">
-          <OutletsTable rows={outlets} />
-        </ChartCard>
-        <ChartCard
-          title="Top Cited Journalists"
-          subtitle="Outreach targets — bylines behind cited articles"
-          action={<ExportButton slug={client.slug} />}
-        >
-          <JournalistsTable rows={journalists} clientSlug={client.slug} />
         </ChartCard>
       </div>
 
