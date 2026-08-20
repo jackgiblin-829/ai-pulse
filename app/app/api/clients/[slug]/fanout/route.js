@@ -43,7 +43,7 @@ const FanoutSchema = z.object({
 async function claudeFanout(kw, target, competitors) {
   const client = new Anthropic();
   const response = await client.messages.parse({
-    model: "claude-opus-5",
+    model: process.env.FANOUT_MODEL || "claude-opus-5",
     max_tokens: 2048,
     output_config: { effort: "low", format: zodOutputFormat(FanoutSchema) },
     system:
@@ -145,7 +145,10 @@ export async function POST(req, { params }) {
     try {
       generated = await claudeFanout(kw, client.target_brand, competitors);
       generator = "claude";
-    } catch {
+    } catch (err) {
+      // Surface the failure: a bad key or exhausted quota otherwise
+      // degrades to templates invisibly while the UI implies Claude ran.
+      console.error(`fanout: Claude generation failed for "${kw}":`, err?.message ?? err);
       generated = templateFanout(kw, client.target_brand, competitors);
     }
   } else {
