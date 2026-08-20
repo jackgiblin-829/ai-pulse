@@ -27,12 +27,13 @@ from collections import Counter
 from urllib.parse import urlparse
 
 import psycopg2
+from psycopg2.extras import execute_values
 
 import config
 from client_config import ClientConfig, load_client
 from constants import (JUNK_TOKENS, MULTI_TLDS, SOCIAL_DOMAINS, STOPWORDS,
                        URL_RE, VENDOR_MAP, classify_intent, normalize_url)
-from sentiment import get_analyzer
+from sentiment import LEXICON_NAME, get_analyzer
 
 csv.field_size_limit(10_000_000)
 
@@ -108,9 +109,14 @@ def run(client_slug, csv_path):
 
     domain_cache = {}
     prompt_cache = {}
-    n_rows = n_urls = n_mentions = 0
+    n_rows = n_urls = n_mentions = n_skipped = 0
+    claude_batch = getattr(analyzer, "supports_batch", False)
+    sentiment_work = []   # (run_id, text_no_urls, [(brand_name, aliases)]) for the batch phase
+    processed_ids = []    # runs fully processed this ingest -> stamped processed_at
 
-    with open(csv_path, newline="") as f:
+    # utf-8-sig: real LLM exports are UTF-8 (smart quotes, em dashes) and
+    # Excel-saved CSVs carry a BOM; never rely on the locale default.
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f):
             vendor = VENDOR_MAP.get(row["vendor"].strip().lower())
             if not vendor:
@@ -130,11 +136,30 @@ def run(client_slug, csv_path):
                      classify_intent(ptext), cfg.facet_for_prompt(ptext)))
                 prompt_cache[ptext] = cur.fetchone()[0]
 
+            # Skip runs whose text is unchanged and already fully processed —
+            # a re-ingest then re-pays no NLP or API cost. Exception: when a
+            # Claude analyzer is active but the stored scores came from the
+            # lexicon (key added after the original ingest), rescore.
+            cur.execute(
+                """SELECT id, response_text = %s, processed_at IS NOT NULL,
+                          EXISTS(SELECT 1 FROM sentiment_scores s
+                                 WHERE s.run_id = llm_runs.id AND s.model = %s)
+                   FROM llm_runs
+                   WHERE prompt_id=%s AND engine=%s AND run_date=%s""",
+                (text, LEXICON_NAME, prompt_cache[ptext], vendor, run_date))
+            existing = cur.fetchone()
+            if existing:
+                _, unchanged, processed, has_lexicon = existing
+                if unchanged and processed and not (claude_batch and has_lexicon):
+                    n_skipped += 1
+                    continue
+
             cur.execute(
                 """INSERT INTO llm_runs(client_id, prompt_id, engine, run_date, response_text)
                    VALUES (%s,%s,%s,%s,%s)
                    ON CONFLICT (prompt_id, engine, run_date)
-                   DO UPDATE SET response_text=EXCLUDED.response_text RETURNING id""",
+                   DO UPDATE SET response_text=EXCLUDED.response_text,
+                                 processed_at=NULL RETURNING id""",
                 (cfg.client_id, prompt_cache[ptext], vendor, run_date, text))
             run_id = cur.fetchone()[0]
             cur.execute("DELETE FROM cited_urls WHERE run_id=%s", (run_id,))
@@ -175,6 +200,7 @@ def run(client_slug, csv_path):
             # (detect on URL-stripped text so a polywood.com citation
             #  doesn't count as a prose mention)
             text_no_urls = URL_RE.sub(" ", text)
+            tracked = []
             for name, b in cfg.brands.items():
                 hits = list(cfg.brand_regexes[name].finditer(text_no_urls))
                 if not hits:
@@ -185,11 +211,21 @@ def run(client_slug, csv_path):
                     (run_id, b["id"], len(hits), hits[0].start()))
                 n_mentions += len(hits)
                 if b["role"] in ("target", "competitor"):
+                    tracked.append((name, b))
+            if tracked and claude_batch:
+                # Defer to the batch phase: one request per run covering all
+                # brands (text sent once), at the 50% Batches API discount.
+                sentiment_work.append(
+                    (run_id, text_no_urls,
+                     [(name, b["aliases"] or [name]) for name, b in tracked]))
+            else:
+                for name, b in tracked:
                     label, score = analyzer.score_brand(text_no_urls, b["aliases"] or [name])
                     cur.execute(
                         """INSERT INTO sentiment_scores(run_id, brand_id, label, score, model)
                            VALUES (%s,%s,%s,%s,%s)""",
                         (run_id, b["id"], label, score, analyzer.name))
+                processed_ids.append(run_id)
 
             # ---- key terms
             for term, freq in extract_key_terms(text_no_urls, cfg).most_common(12):
@@ -201,7 +237,33 @@ def run(client_slug, csv_path):
                 print(f"  {n_rows} runs processed...")
 
     conn.commit()
-    print(f"Done: {n_rows} runs, {n_urls} cited URLs, {n_mentions} brand mentions.")
+
+    # ---- deferred sentiment (Message Batches API, 50% token discount)
+    if sentiment_work:
+        print(f"Scoring sentiment for {len(sentiment_work)} runs "
+              f"({sum(len(b) for _, _, b in sentiment_work)} brand scores) via batch...")
+        results = analyzer.score_batch(
+            [(f"run-{rid}", text, brands) for rid, text, brands in sentiment_work])
+        rows = []
+        for rid, _text, _brands in sentiment_work:
+            scores, from_api = results[f"run-{rid}"]
+            for name, (label, score, model) in scores.items():
+                rows.append((rid, cfg.brands[name]["id"], label, score, model))
+            # Lexicon-degraded runs stay unstamped so the next ingest
+            # retries Claude scoring for them.
+            if from_api:
+                processed_ids.append(rid)
+        execute_values(
+            cur,
+            "INSERT INTO sentiment_scores(run_id, brand_id, label, score, model) VALUES %s",
+            rows)
+
+    if processed_ids:
+        cur.execute("UPDATE llm_runs SET processed_at = now() WHERE id = ANY(%s)",
+                    (processed_ids,))
+    conn.commit()
+    print(f"Done: {n_rows} runs processed, {n_skipped} unchanged runs skipped, "
+          f"{n_urls} cited URLs, {n_mentions} brand mentions.")
 
     # ---- summary from views
     cur.execute("""SELECT brand, engine, ROUND(AVG(visibility_pct),1)

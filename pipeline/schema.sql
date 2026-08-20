@@ -174,6 +174,10 @@ CREATE TABLE llm_runs (
     run_date       DATE NOT NULL,
     response_text  TEXT NOT NULL,
     ingested_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Set once every extraction output (incl. sentiment) is written; a
+    -- re-ingest skips runs whose text is unchanged and processed_at is set,
+    -- so unchanged rows never re-pay NLP or API costs.
+    processed_at   TIMESTAMPTZ,
     UNIQUE (prompt_id, engine, run_date)
 );
 CREATE INDEX idx_runs_client_date_engine ON llm_runs (client_id, run_date, engine);

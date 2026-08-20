@@ -352,8 +352,17 @@ def crawl(conn, client_slug, limit, delay, retry_failed):
                 n_failed += 1
                 conn.commit()
                 continue
-            html = resp.raw.read(MAX_BYTES, decode_content=True).decode(
-                resp.encoding or "utf-8", errors="replace")
+            # iter_content (unlike resp.raw.read) wraps urllib3 errors as
+            # requests exceptions; requests defaults text/html without a
+            # charset param to ISO-8859-1, so only trust resp.encoding when
+            # the header actually declared one — otherwise assume UTF-8.
+            buf = bytearray()
+            for chunk in resp.iter_content(chunk_size=65536):
+                buf.extend(chunk)
+                if len(buf) >= MAX_BYTES:
+                    break
+            enc = resp.encoding if "charset" in ctype.lower() else None
+            html = bytes(buf[:MAX_BYTES]).decode(enc or "utf-8", errors="replace")
 
             author_raw, title, published = extract_metadata(html)
             author = clean_author(author_raw, outlet_name)
@@ -366,7 +375,15 @@ def crawl(conn, client_slug, limit, delay, retry_failed):
                 insert_article(cur, norm, domain, outlet_id, None, title,
                                author_raw, published, "no_byline", http_status=200)
                 n_nobyline += 1
-        except requests.RequestException as e:
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            # One bad URL (network hiccup, parser edge case, DB error) must
+            # never abort the sweep. Roll back first so a mid-transaction DB
+            # failure doesn't leave the connection in an aborted state, then
+            # record the failure in a fresh transaction.
+            conn.rollback()
+            outlet_id, _ = ensure_outlet(cur, domain)
             insert_article(cur, norm, domain, outlet_id, None, None, None, None,
                            "failed", error=str(e)[:300])
             n_failed += 1
