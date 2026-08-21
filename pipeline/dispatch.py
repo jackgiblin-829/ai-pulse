@@ -91,10 +91,26 @@ def run_job(conn, cur, job_name, args, timeout, client_id, slug, today):
     except Exception as e:  # subprocess launch failure must not kill the sweep
         status, error = "error", str(e)[:2000]
 
-    cur.execute(
-        "UPDATE job_runs SET status=%s, finished_at=now(), error=%s WHERE id=%s",
-        (status, error, run_id))
-    conn.commit()
+    # uq_job_runs_one_success allows one success per (job, client, date).
+    # A forced re-run of a job that already succeeded today collides with
+    # it, and an uncaught violation here aborts the entire sweep — every
+    # later client silently goes uncollected. The newest attempt is the
+    # one due-ness should reflect, so retire the superseded success row
+    # first, and never let bookkeeping errors escape this function.
+    try:
+        if status == "success":
+            cur.execute(
+                """DELETE FROM job_runs
+                   WHERE job_name=%s AND client_id=%s AND run_date=%s
+                     AND status='success' AND id <> %s""",
+                (job_name, client_id, today, run_id))
+        cur.execute(
+            "UPDATE job_runs SET status=%s, finished_at=now(), error=%s WHERE id=%s",
+            (status, error, run_id))
+        conn.commit()
+    except psycopg2.Error as e:
+        conn.rollback()
+        log(f"    -> WARN: could not record {job_name} status ({status}): {e}")
     if status == "error":
         log(f"    -> ERROR: {(error or '').splitlines()[-1][:200] if error else '?'}")
     return status
