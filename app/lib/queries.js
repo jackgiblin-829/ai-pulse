@@ -642,3 +642,46 @@ export async function observationSummary(clientId) {
     WHERE c.id = $1`, [Number(clientId)]);
   return row ?? null;
 }
+
+// ---------- Admin: token usage & cost estimates ---------------------
+
+// Character volume of every ingested run, rolled up month × client ×
+// engine. Tokens/costs are derived in lib/pricing.js — this query only
+// counts stored text (prompt = input, response = output).
+export async function usageByClientMonth() {
+  return q(`
+    SELECT to_char(date_trunc('month', r.run_date), 'YYYY-MM') AS month,
+           c.slug, c.name, r.engine::text AS engine,
+           COUNT(*)::int AS runs,
+           COALESCE(SUM(LENGTH(p.text)), 0)::float8 AS input_chars,
+           COALESCE(SUM(LENGTH(r.response_text)), 0)::float8 AS output_chars
+    FROM llm_runs r
+    JOIN clients c ON c.id = r.client_id
+    JOIN prompts p ON p.id = r.prompt_id
+    GROUP BY 1, c.slug, c.name, r.engine
+    ORDER BY 1 DESC, c.name, r.engine`);
+}
+
+// Pipeline NLP overhead: runs whose sentiment came from the Claude API
+// (sentiment_scores.model starts with "claude"; lexicon rows are free).
+// Input mirrors sentiment.py: response text capped at 12k chars plus
+// ~400 chars of prompt scaffolding per request; output is ~30 tokens per
+// scored brand (derived in the page from scored_brands).
+export async function sentimentUsageByClientMonth() {
+  return q(`
+    WITH scored AS (
+      SELECT s.run_id, COUNT(*)::int AS brands
+      FROM sentiment_scores s
+      WHERE s.model ILIKE 'claude%'
+      GROUP BY s.run_id
+    )
+    SELECT to_char(date_trunc('month', r.run_date), 'YYYY-MM') AS month,
+           c.slug,
+           COUNT(*)::int AS scored_runs,
+           COALESCE(SUM(sc.brands), 0)::int AS scored_brands,
+           COALESCE(SUM(LEAST(LENGTH(r.response_text), 12000) + 400), 0)::float8 AS input_chars
+    FROM scored sc
+    JOIN llm_runs r ON r.id = sc.run_id
+    JOIN clients c ON c.id = r.client_id
+    GROUP BY 1, c.slug`);
+}

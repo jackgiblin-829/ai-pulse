@@ -10,6 +10,7 @@ export default async function AppLayout({ children }) {
     ...(session.role === "admin"
       ? [
           { href: "/admin/clients", label: "Manage clients" },
+          { href: "/admin/usage", label: "Usage" },
           { href: "/admin/users", label: "Users" },
         ]
       : []),
