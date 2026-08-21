@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { q } from "@/lib/db";
+import { requireApiSession } from "@/lib/auth";
 import { getClientBySlug } from "@/lib/queries";
 
 // GET — the active prompt library as CSV, ready to feed the prompt
 // runner that queries the engines each collection date.
 export async function GET(req, { params }) {
+  const { error } = await requireApiSession();
+  if (error) return error;
   const { slug } = await params;
   const client = await getClientBySlug(slug);
   if (!client) return NextResponse.json({ error: "unknown client" }, { status: 404 });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { q } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { requireApiSession } from "@/lib/auth";
 import { getClientBySlug, mediaList } from "@/lib/queries";
 
 async function resolve(params) {
@@ -9,9 +9,10 @@ async function resolve(params) {
 }
 
 export async function POST(req, { params }) {
+  const { session, error } = await requireApiSession();
+  if (error) return error;
   const client = await resolve(params);
   if (!client) return NextResponse.json({ error: "unknown client" }, { status: 404 });
-  const session = await getSession();
   const { journalist_id } = await req.json();
   if (!Number.isInteger(journalist_id))
     return NextResponse.json({ error: "journalist_id required" }, { status: 400 });
@@ -30,6 +31,8 @@ export async function POST(req, { params }) {
 }
 
 export async function DELETE(req, { params }) {
+  const { error } = await requireApiSession();
+  if (error) return error;
   const client = await resolve(params);
   if (!client) return NextResponse.json({ error: "unknown client" }, { status: 404 });
   const { journalist_id } = await req.json();
@@ -39,6 +42,8 @@ export async function DELETE(req, { params }) {
 }
 
 export async function GET(req, { params }) {
+  const { error } = await requireApiSession();
+  if (error) return error;
   const client = await resolve(params);
   if (!client) return NextResponse.json({ error: "unknown client" }, { status: 404 });
   return NextResponse.json(await mediaList(client.id));

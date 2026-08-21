@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { NextResponse } from "next/server";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { q } from "./db";
@@ -68,6 +69,23 @@ export async function requireSession() {
     redirect("/login");
   }
   return session;
+}
+
+// API-route variant of requireSession(): same JWT + token_version DB
+// check, but returns { session, error } where error is a 401 JSON
+// NextResponse — API callers get a status code, not a login redirect.
+// Usage:  const { session, error } = await requireApiSession();
+//         if (error) return error;
+export async function requireApiSession() {
+  const unauthorized = () =>
+    NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const session = await getSession();
+  if (!session) return { session: null, error: unauthorized() };
+  const [user] = await q("SELECT token_version FROM users WHERE id = $1", [Number(session.sub)]);
+  if (!user || user.token_version !== (session.tv ?? 0)) {
+    return { session: null, error: unauthorized() };
+  }
+  return { session, error: null };
 }
 
 export async function requireAdmin() {

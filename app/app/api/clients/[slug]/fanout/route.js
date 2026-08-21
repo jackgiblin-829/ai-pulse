@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { q } from "@/lib/db";
+import { requireApiSession } from "@/lib/auth";
 import { getClientBySlug } from "@/lib/queries";
 import { matchRules } from "@/lib/classifyPrompt";
 
@@ -78,6 +79,8 @@ const INTENTS = new Set(["informational", "commercial", "comparison", "transacti
 //   POST { keyword, add: [{text,intent}] } -> commit: insert only the
 //                                        prompts the user selected.
 export async function POST(req, { params }) {
+  const { error } = await requireApiSession();
+  if (error) return error;
   const { slug } = await params;
   const client = await getClientBySlug(slug);
   if (!client) return NextResponse.json({ error: "unknown client" }, { status: 404 });

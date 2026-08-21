@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import { requireApiSession } from "@/lib/auth";
 import { getClientBySlug, mediaList } from "@/lib/queries";
 import { buildMediaListWorkbook } from "@/lib/exportMediaList";
 
 // GET — download the client's media list as an 829-branded .xlsx.
 export async function GET(req, { params }) {
+  const { error } = await requireApiSession();
+  if (error) return error;
   const { slug } = await params;
   const client = await getClientBySlug(slug);
   if (!client) return NextResponse.json({ error: "unknown client" }, { status: 404 });
