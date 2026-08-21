@@ -486,25 +486,28 @@ export async function earnedCitationCount(clientId) {
 export async function kpis(f, brand) {
   const visParams = [];
   const visWin = windowClause(f, visParams);
+  const visEng = engineClause(f, visParams);
   const visBrand = brandSub(f, visParams, brand);
   const [vis] = await q(`
-    WITH runs AS (SELECT id FROM llm_runs r WHERE ${visWin})
+    WITH runs AS (SELECT id FROM llm_runs r WHERE ${visWin} AND ${visEng})
     SELECT ROUND(100.0 * COUNT(DISTINCT bm.run_id) / NULLIF((SELECT COUNT(*) FROM runs),0),1)::float AS visibility
     FROM brand_mentions bm
     WHERE bm.brand_id=${visBrand} AND bm.run_id IN (SELECT id FROM runs)`, visParams);
-  const sov = await shareOfVoice({ ...f, engine: "all" });
+  const sov = await shareOfVoice(f);
   const target = sov.find((s) => s.brand === brand);
   const citeParams = [];
   const citeWin = windowClause(f, citeParams);
+  const citeEng = engineClause(f, citeParams);
   const [cites] = await q(`
-    SELECT COUNT(*)::int AS n FROM cited_urls u JOIN llm_runs r ON r.id=u.run_id WHERE ${citeWin}`, citeParams);
+    SELECT COUNT(*)::int AS n FROM cited_urls u JOIN llm_runs r ON r.id=u.run_id WHERE ${citeWin} AND ${citeEng}`, citeParams);
   const sentParams = [];
   const sentBrand = brandSub(f, sentParams, brand);
   const sentWin = windowClause(f, sentParams);
+  const sentEng = engineClause(f, sentParams);
   const [sent] = await q(`
     SELECT ROUND(100.0*COUNT(*) FILTER (WHERE label='positive')/NULLIF(COUNT(*),0),1)::float AS pos
     FROM sentiment_scores s JOIN llm_runs r ON r.id=s.run_id
-    WHERE s.brand_id=${sentBrand} AND ${sentWin}`, sentParams);
+    WHERE s.brand_id=${sentBrand} AND ${sentWin} AND ${sentEng}`, sentParams);
   return {
     visibility: vis?.visibility ?? 0,
     sov: target?.pct ?? 0,

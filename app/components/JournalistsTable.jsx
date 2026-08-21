@@ -1,35 +1,16 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import useMediaListToggle from "@/components/useMediaListToggle";
 
 export default function JournalistsTable({ rows, clientSlug }) {
-  const router = useRouter();
-  const [added, setAdded] = useState(
-    () => new Set(rows.filter((r) => r.in_media_list).map((r) => r.id))
-  );
-  const [busy, setBusy] = useState(null);
-
-  async function toggle(id) {
-    setBusy(id);
-    const isAdded = added.has(id);
-    const res = await fetch(`/api/clients/${clientSlug}/media-list`, {
-      method: isAdded ? "DELETE" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ journalist_id: id }),
-    });
-    if (res.ok) {
-      setAdded((prev) => {
-        const next = new Set(prev);
-        isAdded ? next.delete(id) : next.add(id);
-        return next;
-      });
-      router.refresh(); // keep media-list/attribution views in sync
-    }
-    setBusy(null);
-  }
+  const { added, busy, error, toggle } = useMediaListToggle(rows, clientSlug);
 
   return (
     <div className="overflow-x-auto">
+      {error && (
+        <p role="alert" className="mb-2 rounded-md bg-[#fdecec] px-3 py-1.5 text-xs font-medium text-[#a02020]">
+          {error}
+        </p>
+      )}
       <table className="w-full min-w-[28rem]">
       <thead>
         <tr className="text-left text-xs text-[var(--text-muted)]">
@@ -57,7 +38,7 @@ export default function JournalistsTable({ rows, clientSlug }) {
                     : "border border-[var(--border)] bg-white text-[var(--text-secondary)] hover:bg-[var(--page)]"
                 }`}
               >
-                {added.has(r.id) ? "✓ Added" : "+ Add to Media List"}
+                {busy === r.id ? "Saving…" : added.has(r.id) ? "✓ Added" : "+ Add to Media List"}
               </button>
             </td>
           </tr>

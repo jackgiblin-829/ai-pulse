@@ -72,6 +72,9 @@ python enrich_bylines.py --client ${client.slug}`}
     );
   }
 
+  const ENGINE_NAMES = { chatgpt: "ChatGPT", gemini: "Gemini", claude: "Claude" };
+  const engineNoun = engine === "all" ? "all engine responses" : `${ENGINE_NAMES[engine]} responses`;
+
   const sovItems = sov.map((s) => ({ name: s.brand, pct: s.pct, color: brandColors[s.brand] ?? GRAY }));
   const kwItems = keywordSov.map((k, i) => ({ name: k.keyword, pct: k.pct, color: SLOTS[i] ?? GRAY }));
 
@@ -98,10 +101,10 @@ python enrich_bylines.py --client ${client.slug}`}
 
       {/* KPI row */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatTile label="Average Visibility" value={kpis.visibility} suffix="%" note="Share of responses mentioning the brand" />
-        <StatTile label="Share of Voice" value={kpis.sov} suffix="%" note="Of all tracked-brand mentions" />
-        <StatTile label="Cited URLs" value={kpis.citations.toLocaleString()} note="Across all engine responses" />
-        <StatTile label="Positive Sentiment" value={kpis.positive} suffix="%" note="Of scored brand mentions" />
+        <StatTile label="Average Visibility" value={kpis.visibility} suffix="%" note={`Share of ${engineNoun} mentioning the brand`} />
+        <StatTile label="Share of Voice" value={kpis.sov} suffix="%" note={`Of tracked-brand mentions in ${engineNoun}`} />
+        <StatTile label="Cited URLs" value={kpis.citations.toLocaleString()} note={`Across ${engineNoun}`} />
+        <StatTile label="Positive Sentiment" value={kpis.positive} suffix="%" note={`Of scored brand mentions in ${engineNoun}`} />
       </div>
 
       {/* 1 — Visibility */}

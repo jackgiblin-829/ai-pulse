@@ -1,6 +1,5 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import useMediaListToggle from "@/components/useMediaListToggle";
 
 const SOURCE_LABELS = { tavily: "web", profound: "profound", llm_run: "engines" };
 
@@ -19,33 +18,15 @@ function Badge({ isNew }) {
 // Same add/remove flow as JournalistsTable — discovered authors land in
 // journalists via enrich_bylines, so the media-list API works unmodified.
 export default function EmergingAuthorsTable({ rows, clientSlug }) {
-  const router = useRouter();
-  const [added, setAdded] = useState(
-    () => new Set(rows.filter((r) => r.in_media_list).map((r) => r.id))
-  );
-  const [busy, setBusy] = useState(null);
-
-  async function toggle(id) {
-    setBusy(id);
-    const isAdded = added.has(id);
-    const res = await fetch(`/api/clients/${clientSlug}/media-list`, {
-      method: isAdded ? "DELETE" : "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ journalist_id: id }),
-    });
-    if (res.ok) {
-      setAdded((prev) => {
-        const next = new Set(prev);
-        isAdded ? next.delete(id) : next.add(id);
-        return next;
-      });
-      router.refresh();
-    }
-    setBusy(null);
-  }
+  const { added, busy, error, toggle } = useMediaListToggle(rows, clientSlug);
 
   return (
     <div className="overflow-x-auto">
+      {error && (
+        <p role="alert" className="mb-2 rounded-md bg-[#fdecec] px-3 py-1.5 text-xs font-medium text-[#a02020]">
+          {error}
+        </p>
+      )}
       <table className="w-full min-w-[40rem]">
         <thead>
           <tr className="text-left text-xs text-[var(--text-muted)]">
@@ -97,7 +78,7 @@ export default function EmergingAuthorsTable({ rows, clientSlug }) {
                       : "border border-[var(--border)] bg-white text-[var(--text-secondary)] hover:bg-[var(--page)]"
                   }`}
                 >
-                  {added.has(r.id) ? "✓ Added" : "+ Add to Media List"}
+                  {busy === r.id ? "Saving…" : added.has(r.id) ? "✓ Added" : "+ Add to Media List"}
                 </button>
               </td>
             </tr>
