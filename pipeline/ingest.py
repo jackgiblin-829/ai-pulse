@@ -31,24 +31,15 @@ from psycopg2.extras import execute_values
 
 import config
 from client_config import ClientConfig, load_client
-from constants import (JUNK_TOKENS, MULTI_TLDS, SOCIAL_DOMAINS, STOPWORDS,
-                       URL_RE, VENDOR_MAP, classify_intent, normalize_url)
+from constants import (JUNK_TOKENS, SOCIAL_DOMAINS, STOPWORDS,
+                       URL_RE, VENDOR_MAP, classify_intent, normalize_url,
+                       registrable_domain)
 from sentiment import LEXICON_NAME, get_analyzer
 
 csv.field_size_limit(10_000_000)
 
 
 # ------------------------------------------------------------------ helpers
-
-def registrable_domain(host):
-    host = host.lower().lstrip(".")
-    if host.startswith("www."):
-        host = host[4:]
-    parts = host.split(".")
-    if len(parts) >= 3 and ".".join(parts[-2:]) in MULTI_TLDS:
-        return ".".join(parts[-3:])
-    return ".".join(parts[-2:]) if len(parts) >= 2 else host
-
 
 def classify_domain(domain, cfg: ClientConfig, outlet_domains):
     """-> (media_type, owned_by_brand_name | None)"""

@@ -48,7 +48,7 @@ import requests
 from bs4 import BeautifulSoup
 
 import config
-from constants import normalize_url
+from constants import SOCIAL_DOMAINS, normalize_url
 
 USER_AGENT = "AIPulseBot/1.0 (+jack.giblin@829llc.com)"
 TIMEOUT = 15
@@ -69,14 +69,6 @@ ARTICLE_TYPES = {"article", "newsarticle", "blogposting", "reportagenewsarticle"
 
 
 # ------------------------------------------------------------------ helpers
-
-def registrable_domain(host):
-    host = host.lower().lstrip(".")
-    if host.startswith("www."):
-        host = host[4:]
-    parts = host.split(".")
-    return ".".join(parts[-2:]) if len(parts) >= 2 else host
-
 
 def clean_author(raw, outlet_name=None):
     """Normalize an extracted byline; return None for junk."""
@@ -249,6 +241,16 @@ def backfill_cited_urls(cur):
     return n
 
 
+def backfill_observations(cur):
+    """Point external citation observations at their crawled articles.
+    Observation URLs are stored pre-normalized, so a set-based join works."""
+    cur.execute(
+        """UPDATE citation_observations o SET article_id = a.id
+           FROM articles a
+           WHERE o.article_id IS NULL AND a.url = o.url""")
+    return cur.rowcount
+
+
 # ------------------------------------------------------------------ modes
 
 def load_fixture(conn):
@@ -264,8 +266,10 @@ def load_fixture(conn):
                        None, "ok", http_status=200)
         n += 1
     filled = backfill_cited_urls(cur)
+    filled_obs = backfill_observations(cur)
     conn.commit()
-    print(f"Fixture: {n} articles loaded, {filled} cited URLs backfilled.")
+    print(f"Fixture: {n} articles loaded, {filled} cited URLs and "
+          f"{filled_obs} observations backfilled.")
 
 
 class RobotsCache:
@@ -300,6 +304,19 @@ def candidates(cur, client_slug, retry_failed):
         WHERE d.media_type = 'earned' {client_sql}
         ORDER BY d.domain, u.url""", params)
     rows = cur.fetchall()
+    # External observations (Tavily / Profound) join the queue too — their
+    # bylines feed the Emerging Authors analysis. Skip social platforms.
+    obs_sql = ""
+    obs_params = [sorted(SOCIAL_DOMAINS)]  # list -> ARRAY[...] (a tuple becomes a record)
+    if client_slug:
+        obs_sql = "AND o.client_id = (SELECT id FROM clients WHERE slug = %s)"
+        obs_params.append(client_slug)
+    cur.execute(f"""
+        SELECT DISTINCT o.url, o.domain
+        FROM citation_observations o
+        WHERE o.domain <> ALL(%s::text[]) {obs_sql}
+        ORDER BY o.domain, o.url""", obs_params)
+    rows += cur.fetchall()
     # never refetch a URL with any articles row (unless retrying failures)
     if retry_failed:
         cur.execute("SELECT url FROM articles WHERE fetch_status <> 'failed'")
@@ -393,9 +410,11 @@ def crawl(conn, client_slug, limit, delay, retry_failed):
                   f"failed={n_failed} skipped={n_skipped})")
 
     filled = backfill_cited_urls(cur)
+    filled_obs = backfill_observations(cur)
     conn.commit()
     print(f"Done: ok={n_ok} no_byline={n_nobyline} failed={n_failed} "
-          f"skipped={n_skipped}; {filled} cited URLs backfilled.")
+          f"skipped={n_skipped}; {filled} cited URLs and "
+          f"{filled_obs} observations backfilled.")
 
 
 if __name__ == "__main__":

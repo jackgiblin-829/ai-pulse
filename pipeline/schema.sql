@@ -17,17 +17,34 @@ CREATE TYPE brand_role_t      AS ENUM ('target', 'competitor', 'ecosystem');
 CREATE TYPE sentiment_label_t AS ENUM ('positive', 'neutral', 'negative');
 -- Search intent of a prompt, classified by ordered rules at ingest.
 CREATE TYPE intent_t          AS ENUM ('informational', 'commercial', 'comparison', 'transactional');
+-- How often the scheduler collects data for a client.
+CREATE TYPE cadence_t         AS ENUM ('daily', 'weekly');
+-- Where an external citation/search observation came from.
+CREATE TYPE observation_source_t AS ENUM ('tavily', 'profound', 'llm_run');
 
 -- ---------- Tenancy ---------------------------------------------
 
 -- One row per 829 client. All client-specific config and data hang
 -- off this table; onboarding writes it from the /admin/clients form.
 CREATE TABLE clients (
-    id          SERIAL PRIMARY KEY,
-    slug        TEXT NOT NULL UNIQUE,          -- 'polywood'; used in URLs and CLI args
-    name        TEXT NOT NULL,                 -- display name
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                SERIAL PRIMARY KEY,
+    slug              TEXT NOT NULL UNIQUE,    -- 'polywood'; used in URLs and CLI args
+    name              TEXT NOT NULL,           -- display name
+    tracking_cadence  cadence_t NOT NULL DEFAULT 'weekly',  -- scheduler collection frequency
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Per-client external integration config, written by the
+-- /admin/clients form (Integrations section). Global API keys live
+-- in env (TAVILY_API_KEY / PROFOUND_API_KEY).
+CREATE TABLE client_integrations (
+    client_id         INT PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+    tavily_enabled    BOOLEAN NOT NULL DEFAULT FALSE,
+    profound_enabled  BOOLEAN NOT NULL DEFAULT FALSE,
+    profound_org_id   TEXT,     -- Profound organization identifier
+    profound_category TEXT,     -- Profound category (prompt set) identifier
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Dashboard users (email + password auth).
@@ -181,6 +198,84 @@ CREATE TABLE llm_runs (
     UNIQUE (prompt_id, engine, run_date)
 );
 CREATE INDEX idx_runs_client_date_engine ON llm_runs (client_id, run_date, engine);
+
+-- ---------- Scheduling -------------------------------------------
+
+-- One row per dispatcher (pipeline/dispatch.py) job attempt.
+-- run_date is the logical collection date; the partial unique index
+-- is the idempotence guard — at most one SUCCESSFUL attempt per
+-- (job, client, date), while failed attempts may repeat.
+CREATE TABLE job_runs (
+    id           BIGSERIAL PRIMARY KEY,
+    job_name     TEXT NOT NULL,     -- 'tavily_fetch' | 'profound_pull' | 'enrich_bylines' | 'tag_topics' | 'prompt_runner'
+    client_id    INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    run_date     DATE NOT NULL,
+    started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at  TIMESTAMPTZ,
+    status       TEXT NOT NULL DEFAULT 'running'
+                 CHECK (status IN ('running', 'success', 'error', 'skipped')),
+    error        TEXT
+);
+CREATE UNIQUE INDEX uq_job_runs_one_success
+    ON job_runs (job_name, client_id, run_date) WHERE status = 'success';
+CREATE INDEX idx_job_runs_client ON job_runs (client_id, job_name, run_date DESC);
+
+-- ---------- External citation observations -----------------------
+
+-- Search/citation observations from external sources (Tavily
+-- searches on fan-out keywords, Profound citation reports).
+-- Internal LLM-run citations stay in cited_urls; analytics UNION
+-- the two. url is normalize_url()-canonical so it joins
+-- articles.url / url_topics.url with plain equality.
+CREATE TABLE citation_observations (
+    id              BIGSERIAL PRIMARY KEY,
+    client_id       INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    source          observation_source_t NOT NULL,
+    observed_at     DATE NOT NULL,              -- fetch date / report date
+    url             TEXT NOT NULL,              -- normalized
+    domain          TEXT NOT NULL,              -- registrable domain
+    query           TEXT,                       -- Tavily query or Profound prompt
+    engine          TEXT,                       -- Profound: citing AI engine
+    title           TEXT,
+    snippet         TEXT,                       -- Tavily content snippet (topic input)
+    score           NUMERIC(6,4),               -- Tavily relevance score
+    published_at    DATE,                       -- Tavily published_date
+    citation_count  INT NOT NULL DEFAULT 1,     -- Profound aggregate for the window
+    article_id      BIGINT REFERENCES articles(id),  -- backfilled by enrich_bylines
+    raw             JSONB,                      -- source payload for audit
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Idempotency key for fetch jobs (expression index so NULL query dedupes).
+CREATE UNIQUE INDEX uq_citation_obs
+    ON citation_observations (client_id, source, url, observed_at, COALESCE(query, ''));
+CREATE INDEX idx_citation_obs_client_date ON citation_observations (client_id, observed_at);
+CREATE INDEX idx_citation_obs_article     ON citation_observations (article_id);
+
+-- ---------- Topics ------------------------------------------------
+
+-- Client-scoped topic vocabulary, grown by the Claude tagging pass
+-- (relevance is a per-client opinion; the URL itself is global).
+CREATE TABLE topics (
+    id          SERIAL PRIMARY KEY,
+    client_id   INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,                  -- short lowercase label
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (client_id, name)
+);
+
+-- Topic assignments keyed on normalized URL — one tagging works for
+-- external observations and (via articles) internal cited_urls.
+CREATE TABLE url_topics (
+    id          BIGSERIAL PRIMARY KEY,
+    client_id   INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    url         TEXT NOT NULL,                  -- normalized
+    topic_id    INT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+    confidence  NUMERIC(4,3),
+    model       TEXT,                           -- which tagger produced it
+    tagged_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (client_id, url, topic_id)
+);
+CREATE INDEX idx_url_topics_url ON url_topics (client_id, url);
 
 -- ---------- Extraction outputs ---------------------------------
 

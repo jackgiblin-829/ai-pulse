@@ -35,6 +35,7 @@ export default async function AdminClients() {
               <th className="py-2 font-medium">Slug</th>
               <th className="py-2 font-medium">Target brand</th>
               <th className="py-2 text-right font-medium">Competitors</th>
+              <th className="py-2 font-medium">Cadence</th>
               <th className="py-2 font-medium">Last ingest</th>
               <th className="py-2"></th>
             </tr>
@@ -48,6 +49,15 @@ export default async function AdminClients() {
                 <td className="border-t border-[var(--grid)] py-2 font-mono text-xs text-[var(--text-secondary)]">{c.slug}</td>
                 <td className="border-t border-[var(--grid)] py-2 text-sm">{c.target_brand ?? "—"}</td>
                 <td className="tabular border-t border-[var(--grid)] py-2 text-right text-sm">{c.competitors}</td>
+                <td className="border-t border-[var(--grid)] py-2">
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    c.tracking_cadence === "daily"
+                      ? "bg-[var(--accent)]/10 text-[var(--accent)]"
+                      : "bg-[var(--page)] text-[var(--text-secondary)]"
+                  }`}>
+                    {c.tracking_cadence}
+                  </span>
+                </td>
                 <td className="border-t border-[var(--grid)] py-2 text-xs text-[var(--text-secondary)]">{c.last_run ?? "no data"}</td>
                 <td className="border-t border-[var(--grid)] py-2 text-right">
                   <Link href={`/admin/clients/${c.id}`}
@@ -59,7 +69,7 @@ export default async function AdminClients() {
             ))}
             {clients.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-8 text-center text-sm text-[var(--text-muted)]">
+                <td colSpan={7} className="py-8 text-center text-sm text-[var(--text-muted)]">
                   No clients yet.
                 </td>
               </tr>

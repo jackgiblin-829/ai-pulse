@@ -72,6 +72,52 @@ npm run dev                              # http://localhost:3000 -> /login
 Set `ANTHROPIC_API_KEY` before ingesting to switch sentiment analysis from the
 lexicon fallback to Claude (`sentiment.py`).
 
+## Scheduler & tracking cadence
+
+Each client has a **tracking cadence** (weekly by default, or daily — toggle
+in Admin → Clients). `pipeline/dispatch.py` reads the cadence plus the
+`job_runs` bookkeeping table and runs whatever is due:
+
+```bash
+python3 dispatch.py --dry-run          # print the client × job due matrix
+python3 dispatch.py                    # run everything due
+python3 dispatch.py --client polywood --force   # one client, ignore due-ness
+```
+
+Jobs per client, in order (each idempotent, each skips itself when its
+integration is disabled):
+
+```bash
+python3 fetch_tavily.py --client <slug>     # Tavily search on fan-out keywords
+python3 fetch_profound.py --client <slug>   # Profound citations report
+python3 enrich_bylines.py --client <slug>   # byline crawl (now also sweeps observations)
+python3 tag_topics.py --client <slug>       # Claude topic tagging
+```
+
+Install the launchd timer (fires 06:00 + 18:00; the second fire is a free
+retry — due-ness makes it a no-op on good days):
+
+```bash
+mkdir -p ~/Library/Logs/ai-pulse
+cp pipeline/launchd/com.829llc.aipulse.dispatch.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.829llc.aipulse.dispatch.plist
+launchctl kickstart gui/$(id -u)/com.829llc.aipulse.dispatch
+```
+
+Env for the fetchers: `TAVILY_API_KEY`, `PROFOUND_API_KEY`, optional
+`TOPIC_MODEL` (defaults to `FANOUT_MODEL`, then claude-haiku). launchd does
+not read shell profiles — put keys in the plist's `EnvironmentVariables`.
+
+## Emerging authors & topics
+
+The **Emerging** tab per client blends three citation sources — Tavily
+searches on the fan-out keywords, Profound citation reports (clients with a
+Profound subscription; category ID configured in Admin → Clients), and the
+engines' own ingested citations — into new/rising author and topic analysis.
+External observations land in `citation_observations`; authors come from the
+byline crawler; topics from `tag_topics.py` (client-scoped vocabulary,
+reuse-before-invent Claude tagging).
+
 ## Onboarding a new client
 
 Sign in as an admin and use **Admin → Clients → New client**: target brand +

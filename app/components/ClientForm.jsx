@@ -41,6 +41,14 @@ export default function ClientForm({ initial }) {
   const [rules, setRules] = useState(initial?.rules ?? []);
   const [vocab, setVocab] = useState((initial?.vocab ?? []).join("\n"));
   const [facets, setFacets] = useState(initial?.facets ?? []);
+  const [cadence, setCadence] = useState(initial?.tracking_cadence ?? "weekly");
+  const [integrations, setIntegrations] = useState(
+    initial?.integrations ?? {
+      tavily_enabled: false,
+      profound_enabled: false,
+      profound_org_id: "",
+      profound_category: "",
+    });
 
   const catList = categories.split("\n").map((c) => c.trim()).filter(Boolean);
 
@@ -63,6 +71,8 @@ export default function ClientForm({ initial }) {
     fallback_category: fallback || catList[0] || "",
     rules, vocab: vocab.split("\n"),
     facets,
+    tracking_cadence: cadence,
+    integrations,
   });
 
   return (
@@ -70,7 +80,7 @@ export default function ClientForm({ initial }) {
       <input type="hidden" name="payload" value={payload} />
 
       <Section title="Client">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
           <label className={labelCls}>
             Client name
             <input
@@ -88,6 +98,27 @@ export default function ClientForm({ initial }) {
               onChange={(e) => { setSlugTouched(true); setSlug(slugify(e.target.value)); }}
             />
           </label>
+          <div className={labelCls}>
+            Tracking cadence
+            <div className="mt-1 flex rounded-md border border-[var(--border)] bg-white p-0.5" role="radiogroup" aria-label="Tracking cadence">
+              {["weekly", "daily"].map((c) => (
+                <button
+                  key={c} type="button" role="radio" aria-checked={cadence === c}
+                  className={`flex-1 rounded px-3 py-1 text-xs font-medium capitalize ${
+                    cadence === c
+                      ? "bg-[var(--text-primary)] text-white"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--page)]"
+                  }`}
+                  onClick={() => setCadence(c)}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] font-normal text-[var(--text-muted)]">
+              How often the scheduler collects data for this client.
+            </p>
+          </div>
         </div>
       </Section>
 
@@ -241,6 +272,41 @@ export default function ClientForm({ initial }) {
       <Section title="Key-term vocabulary" hint="One term per line — curated attributes/materials/products for the Key Terms widget.">
         <textarea value={vocab} className={textareaCls}
           onChange={(e) => setVocab(e.target.value)} />
+      </Section>
+
+      <Section
+        title="Integrations"
+        hint="External citation sources for the Emerging tab. API keys are configured in the pipeline environment (TAVILY_API_KEY / PROFOUND_API_KEY)."
+      >
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox" checked={integrations.tavily_enabled}
+            onChange={(e) => setIntegrations({ ...integrations, tavily_enabled: e.target.checked })}
+          />
+          Tavily web search on fan-out keywords
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox" checked={integrations.profound_enabled}
+            onChange={(e) => setIntegrations({ ...integrations, profound_enabled: e.target.checked })}
+          />
+          Profound citation reports (client has a Profound subscription)
+        </label>
+        {integrations.profound_enabled && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className={labelCls}>
+              Profound category ID (UUID — scopes the citations report)
+              <input value={integrations.profound_category} className={`${inputCls} font-mono text-xs`}
+                placeholder="182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e"
+                onChange={(e) => setIntegrations({ ...integrations, profound_category: e.target.value })} />
+            </label>
+            <label className={labelCls}>
+              Profound organization ID (optional)
+              <input value={integrations.profound_org_id} className={`${inputCls} font-mono text-xs`}
+                onChange={(e) => setIntegrations({ ...integrations, profound_org_id: e.target.value })} />
+            </label>
+          </div>
+        )}
       </Section>
 
       {state?.error && <p className="text-sm text-[#e34948]">{state.error}</p>}

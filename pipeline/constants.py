@@ -45,6 +45,18 @@ def classify_intent(prompt):
     return "informational"
 
 
+def registrable_domain(host):
+    """Registrable domain (www-stripped, multi-part-TLD aware) — the
+    domain identity shared by ingest, enrich_bylines, and the fetchers."""
+    host = host.lower().lstrip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    parts = host.split(".")
+    if len(parts) >= 3 and ".".join(parts[-2:]) in MULTI_TLDS:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:]) if len(parts) >= 2 else host
+
+
 def normalize_url(url):
     """Canonical URL identity shared by ingest.py and enrich_bylines.py:
     forced https, lowercased host with 'www.' stripped, path without a

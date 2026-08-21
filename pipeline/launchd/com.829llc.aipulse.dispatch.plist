@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  AI Pulse dispatcher LaunchAgent.
+
+  Fires pipeline/dispatch.py twice a day; due-ness (clients.tracking_cadence
+  + job_runs bookkeeping) makes the second fire a no-op on good days and a
+  free retry after failures. launchd runs a missed StartCalendarInterval on
+  wake from sleep.
+
+  Install:
+    mkdir -p ~/Library/Logs/ai-pulse
+    cp pipeline/launchd/com.829llc.aipulse.dispatch.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.829llc.aipulse.dispatch.plist
+    launchctl kickstart gui/$(id -u)/com.829llc.aipulse.dispatch   # fire once now
+
+  API keys: launchd does not read shell profiles — add TAVILY_API_KEY /
+  PROFOUND_API_KEY / ANTHROPIC_API_KEY to EnvironmentVariables below.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.829llc.aipulse.dispatch</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/jackgiblin/Downloads/ai-pulse/.venv/bin/python3</string>
+    <string>/Users/jackgiblin/Downloads/ai-pulse/pipeline/dispatch.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/jackgiblin/Downloads/ai-pulse/pipeline</string>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>/Users/jackgiblin/Library/Logs/ai-pulse/dispatch.log</string>
+  <key>StandardErrorPath</key><string>/Users/jackgiblin/Library/Logs/ai-pulse/dispatch.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AI_PULSE_DSN</key><string>host=/tmp port=5433 dbname=ai_pulse user=pulse</string>
+  </dict>
+</dict>
+</plist>

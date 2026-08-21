@@ -87,6 +87,9 @@ python enrich_bylines.py --client ${client.slug}`}
           </h1>
           <p className="mt-1 text-sm text-[var(--text-secondary)]">
             {matrix.length ? `${sov.length} tracked brands · ChatGPT, Gemini & Claude` : "No data ingested yet"}
+            <span className="ml-2 rounded-full bg-[var(--page)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-muted)]">
+              Tracked {client.tracking_cadence}
+            </span>
           </p>
           <ClientTabs slug={client.slug} active="" />
         </div>

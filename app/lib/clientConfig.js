@@ -2,8 +2,16 @@ import { q } from "./db";
 
 // Read a client's full config into the ClientForm payload shape.
 export async function loadClientConfig(id) {
-  const [client] = await q("SELECT id, slug, name FROM clients WHERE id = $1", [Number(id)]);
+  const [client] = await q(
+    "SELECT id, slug, name, tracking_cadence::text AS tracking_cadence FROM clients WHERE id = $1",
+    [Number(id)]);
   if (!client) return null;
+
+  const [integrations] = await q(
+    `SELECT tavily_enabled, profound_enabled,
+            COALESCE(profound_org_id, '') AS profound_org_id,
+            COALESCE(profound_category, '') AS profound_category
+     FROM client_integrations WHERE client_id = $1`, [client.id]);
 
   const brands = await q(
     `SELECT name, role::text AS role, aliases, owned_domains FROM brands
@@ -41,12 +49,19 @@ export async function loadClientConfig(id) {
     rules: rules.filter((r) => r.pattern !== ".*"),
     vocab: vocab.map((v) => v.term),
     facets,
+    tracking_cadence: client.tracking_cadence,
+    integrations: integrations ?? {
+      tavily_enabled: false,
+      profound_enabled: false,
+      profound_org_id: "",
+      profound_category: "",
+    },
   };
 }
 
 export async function adminClientList() {
   return q(`
-    SELECT c.id, c.slug, c.name, b.name AS target_brand,
+    SELECT c.id, c.slug, c.name, c.tracking_cadence::text AS tracking_cadence, b.name AS target_brand,
            (SELECT COUNT(*)::int FROM brands WHERE client_id = c.id AND role = 'competitor') AS competitors,
            (SELECT MAX(run_date)::text FROM llm_runs WHERE client_id = c.id) AS last_run
     FROM clients c

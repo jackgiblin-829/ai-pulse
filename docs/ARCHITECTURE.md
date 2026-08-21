@@ -25,12 +25,20 @@ prompt library ──▶ prompt runner (OpenAI/Google/Anthropic APIs, scheduled)
         Next.js dashboard  /  /api/dashboard JSON
 ```
 
-The demo replaces the prompt runner with `generate_demo_data.py`. To go live,
-add a runner that iterates `prompts` × engines on a schedule and appends to the
-export (or writes `llm_runs` directly); the pipeline is idempotent (upserts on
-`prompt_id, engine, run_date`), so re-runs are safe. If volume grows past what
-a nightly batch handles, lift the per-response stage into an RQ/Celery worker
-queue — the code is already structured per-response.
+The demo replaces the prompt runner with `generate_demo_data.py`. Scheduling
+is real: a launchd LaunchAgent (`pipeline/launchd/…dispatch.plist`, 06:00 +
+18:00) fires `pipeline/dispatch.py`, which reads `clients.tracking_cadence`
+('daily' | 'weekly', set in /admin/clients) plus the `job_runs` bookkeeping
+table and runs whatever is due per client: `fetch_tavily.py` →
+`fetch_profound.py` → `enrich_bylines.py` → `tag_topics.py` (a future LLM
+prompt-runner slots into the same registry). Due-ness = no success row this
+period (day, or Mon-anchored ISO week), so the second daily fire is a free
+retry and weekly clients self-heal after downtime. In a container, swap the
+plist for one cron line — the dispatcher is unchanged. The ingest pipeline
+stays idempotent (upserts on `prompt_id, engine, run_date`), so re-runs are
+safe. If volume grows past what a nightly batch handles, lift the
+per-response stage into an RQ/Celery worker queue — the code is already
+structured per-response.
 
 ## 2. Database schema
 
@@ -46,6 +54,11 @@ Core tables (see `pipeline/schema.sql` for full DDL):
 - `sentiment_scores` — per run × tracked brand: label + score + model
 - `key_terms` — extracted attribute/material/product terms per run
 - `media_list_entries` — the "Add to Media List" action target
+- `client_integrations` — per-client Tavily/Profound flags + Profound category ID
+- `citation_observations` — external citation/search observations (Tavily, Profound), normalized URLs
+- `topics`, `url_topics` — client-scoped topic vocabulary + per-URL assignments (Claude tagging)
+- `job_runs` — scheduler bookkeeping (one row per dispatch job attempt; partial unique index enforces one success per job/client/date)
+- `clients.tracking_cadence` — daily/weekly scheduler frequency per client
 
 Views: `v_visibility`, `v_share_of_voice`, `v_media_strategy` mirror the
 dashboard's core metrics in SQL.

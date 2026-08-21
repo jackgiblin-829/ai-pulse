@@ -3,6 +3,7 @@ import Link from "next/link";
 const TABS = [
   ["", "Report"],
   ["/targets", "Citation targets"],
+  ["/emerging", "Emerging"],
   ["/prompts", "Prompts"],
   ["/media-list", "Media list"],
   ["/attribution", "Attribution"],

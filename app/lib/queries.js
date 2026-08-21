@@ -46,7 +46,8 @@ function brandSub(f, params, brand) {
 
 export async function getClientBySlug(slug) {
   const [client] = await q(
-    `SELECT c.id, c.slug, c.name, b.name AS target_brand
+    `SELECT c.id, c.slug, c.name, c.tracking_cadence::text AS tracking_cadence,
+            b.name AS target_brand
      FROM clients c
      JOIN brands b ON b.client_id = c.id AND b.role = 'target'
      WHERE c.slug = $1`, [slug]);
@@ -510,4 +511,131 @@ export async function kpis(f, brand) {
     citations: cites?.n ?? 0,
     positive: sent?.pos ?? 0,
   };
+}
+
+// ---------- Emerging authors & topics ------------------------------
+// Blended citation observations: external (Tavily / Profound) rows from
+// citation_observations UNION internal LLM-run citations. Weight is the
+// Profound aggregate count or 1 per row. Internal URLs resolve to their
+// crawled article's normalized URL so topic joins work across sources.
+// "Emerging" (window = N days, anchored at CURRENT_DATE):
+//   New    = first observation across all sources within the last N days.
+//   Rising = recent weight >= 3 AND >= 2x the prior N-day window.
+const OBS_CTE = `
+  obs AS (
+    SELECT o.url, o.domain, o.observed_at AS seen_on, o.source::text AS source,
+           o.citation_count AS weight, o.article_id
+    FROM citation_observations o
+    WHERE o.client_id = $1
+    UNION ALL
+    SELECT COALESCE(a.url, u.url), d.domain, r.run_date, 'llm_run', 1, u.article_id
+    FROM cited_urls u
+    JOIN llm_runs r      ON r.id = u.run_id
+    JOIN cited_domains d ON d.id = u.domain_id
+    LEFT JOIN articles a ON a.id = u.article_id
+    WHERE r.client_id = $1
+  )`;
+
+export async function emergingAuthors(clientId, days, limit = 25) {
+  return q(`
+    WITH ${OBS_CTE}
+    SELECT j.id, j.name, mo.name AS outlet, mo.domain_authority::int AS da,
+           MIN(obs.seen_on)::text AS first_seen,
+           COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on >= CURRENT_DATE - $2::int), 0)::int AS recent,
+           COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on <  CURRENT_DATE - $2::int
+                                              AND obs.seen_on >= CURRENT_DATE - 2 * $2::int), 0)::int AS prior,
+           ARRAY_AGG(DISTINCT obs.source) AS sources,
+           (MIN(obs.seen_on) >= CURRENT_DATE - $2::int) AS is_new,
+           (ml.id IS NOT NULL) AS in_media_list
+    FROM obs
+    JOIN articles a ON a.id = obs.article_id AND a.journalist_id IS NOT NULL
+    JOIN journalists j ON j.id = a.journalist_id
+    LEFT JOIN media_outlets mo ON mo.id = j.outlet_id
+    LEFT JOIN media_list_entries ml ON ml.journalist_id = j.id AND ml.client_id = $1
+    GROUP BY j.id, j.name, mo.name, mo.domain_authority, ml.id
+    HAVING COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on >= CURRENT_DATE - $2::int), 0) > 0
+       AND ( MIN(obs.seen_on) >= CURRENT_DATE - $2::int
+          OR ( COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on >= CURRENT_DATE - $2::int), 0) >= 3
+           AND COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on >= CURRENT_DATE - $2::int), 0)
+               >= 2 * COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on < CURRENT_DATE - $2::int
+                                                         AND obs.seen_on >= CURRENT_DATE - 2 * $2::int), 0) ) )
+    ORDER BY (COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on >= CURRENT_DATE - $2::int), 0) + 1.0)
+           / (COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on < CURRENT_DATE - $2::int
+                                                 AND obs.seen_on >= CURRENT_DATE - 2 * $2::int), 0) + 1.0) DESC,
+             recent DESC
+    LIMIT $3`,
+    [intParam(clientId, "clientId"), intParam(days, "days"), intParam(limit, "limit")]);
+}
+
+export async function emergingTopics(clientId, days, limit = 20) {
+  return q(`
+    WITH ${OBS_CTE}
+    SELECT t.id, t.name,
+           MIN(obs.seen_on)::text AS first_seen,
+           COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on >= CURRENT_DATE - $2::int), 0)::int AS recent,
+           COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on <  CURRENT_DATE - $2::int
+                                              AND obs.seen_on >= CURRENT_DATE - 2 * $2::int), 0)::int AS prior,
+           COUNT(DISTINCT obs.url)::int AS urls,
+           (ARRAY_AGG(DISTINCT obs.url))[1:3] AS examples,
+           ARRAY_AGG(DISTINCT obs.source) AS sources,
+           (MIN(obs.seen_on) >= CURRENT_DATE - $2::int) AS is_new
+    FROM obs
+    JOIN url_topics ut ON ut.client_id = $1 AND ut.url = obs.url
+    JOIN topics t ON t.id = ut.topic_id
+    GROUP BY t.id, t.name
+    HAVING COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on >= CURRENT_DATE - $2::int), 0) > 0
+       AND ( MIN(obs.seen_on) >= CURRENT_DATE - $2::int
+          OR ( COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on >= CURRENT_DATE - $2::int), 0) >= 3
+           AND COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on >= CURRENT_DATE - $2::int), 0)
+               >= 2 * COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on < CURRENT_DATE - $2::int
+                                                         AND obs.seen_on >= CURRENT_DATE - 2 * $2::int), 0) ) )
+    ORDER BY (COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on >= CURRENT_DATE - $2::int), 0) + 1.0)
+           / (COALESCE(SUM(obs.weight) FILTER (WHERE obs.seen_on < CURRENT_DATE - $2::int
+                                                 AND obs.seen_on >= CURRENT_DATE - 2 * $2::int), 0) + 1.0) DESC,
+             recent DESC
+    LIMIT $3`,
+    [intParam(clientId, "clientId"), intParam(days, "days"), intParam(limit, "limit")]);
+}
+
+// Weekly weight per topic for the trend chart — top 6 topics by total
+// weight over the recent + prior windows.
+export async function topicWeeklyTrend(clientId, days) {
+  return q(`
+    WITH ${OBS_CTE},
+    tw AS (
+      SELECT t.name AS topic, date_trunc('week', obs.seen_on)::date AS week,
+             SUM(obs.weight)::int AS weight
+      FROM obs
+      JOIN url_topics ut ON ut.client_id = $1 AND ut.url = obs.url
+      JOIN topics t ON t.id = ut.topic_id
+      WHERE obs.seen_on >= CURRENT_DATE - 2 * $2::int
+      GROUP BY t.name, date_trunc('week', obs.seen_on)
+    ),
+    top AS (SELECT topic FROM tw GROUP BY topic ORDER BY SUM(weight) DESC LIMIT 6)
+    SELECT tw.topic, tw.week::text AS week, tw.weight
+    FROM tw JOIN top USING (topic)
+    ORDER BY tw.week, tw.topic`,
+    [intParam(clientId, "clientId"), intParam(days, "days")]);
+}
+
+// Freshness / empty-state banner for the Emerging tab.
+export async function observationSummary(clientId) {
+  const [row] = await q(`
+    SELECT
+      COALESCE(i.tavily_enabled, FALSE)   AS tavily_enabled,
+      COALESCE(i.profound_enabled, FALSE) AS profound_enabled,
+      (SELECT COUNT(*)::int FROM citation_observations WHERE client_id = $1 AND source = 'tavily')   AS tavily_count,
+      (SELECT MAX(observed_at)::text FROM citation_observations WHERE client_id = $1 AND source = 'tavily')   AS tavily_last,
+      (SELECT COUNT(*)::int FROM citation_observations WHERE client_id = $1 AND source = 'profound') AS profound_count,
+      (SELECT MAX(observed_at)::text FROM citation_observations WHERE client_id = $1 AND source = 'profound') AS profound_last,
+      (SELECT COUNT(*)::int FROM cited_urls u JOIN llm_runs r ON r.id = u.run_id WHERE r.client_id = $1) AS internal_count,
+      (SELECT MAX(run_date)::text FROM llm_runs WHERE client_id = $1) AS internal_last,
+      (SELECT COUNT(*)::int FROM citation_observations WHERE client_id = $1 AND article_id IS NULL) AS pending_enrichment,
+      (SELECT COUNT(DISTINCT o.url)::int FROM citation_observations o
+       WHERE o.client_id = $1
+         AND NOT EXISTS (SELECT 1 FROM url_topics t WHERE t.client_id = $1 AND t.url = o.url)) AS pending_tagging
+    FROM clients c
+    LEFT JOIN client_integrations i ON i.client_id = c.id
+    WHERE c.id = $1`, [Number(clientId)]);
+  return row ?? null;
 }

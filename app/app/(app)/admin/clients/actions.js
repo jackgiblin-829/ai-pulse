@@ -23,7 +23,9 @@ function parseList(s) {
 //   competitors: [{name, aliases, owned_domains}],
 //   ecosystem: [{name, aliases}],
 //   categories: [name], fallback_category: name,
-//   rules: [{pattern, category}], vocab: [term] }
+//   rules: [{pattern, category}], vocab: [term],
+//   tracking_cadence: 'daily'|'weekly',
+//   integrations: {tavily_enabled, profound_enabled, profound_org_id, profound_category} }
 export async function saveClient(prevState, formData) {
   await requireAdmin();
   let p;
@@ -43,6 +45,16 @@ export async function saveClient(prevState, formData) {
   if (!categories.length) return bad("At least one keyword category is required");
   const fallback = p.fallback_category?.trim() || categories[0];
   if (!categories.includes(fallback)) return bad("Fallback category must be one of the categories");
+
+  const cadence = ["daily", "weekly"].includes(p.tracking_cadence) ? p.tracking_cadence : "weekly";
+  const integrations = {
+    tavily_enabled: Boolean(p.integrations?.tavily_enabled),
+    profound_enabled: Boolean(p.integrations?.profound_enabled),
+    profound_org_id: String(p.integrations?.profound_org_id ?? "").trim(),
+    profound_category: String(p.integrations?.profound_category ?? "").trim(),
+  };
+  if (integrations.profound_enabled && !integrations.profound_category)
+    return bad("Profound category ID is required when Profound is enabled");
 
   const rules = (p.rules ?? []).filter((r) => r.pattern?.trim() && r.category?.trim());
   for (const r of rules) {
@@ -67,13 +79,27 @@ export async function saveClient(prevState, formData) {
     let clientId = p.id ? Number(p.id) : null;
     if (clientId) {
       const { rowCount } = await conn.query(
-        "UPDATE clients SET slug=$1, name=$2, updated_at=now() WHERE id=$3", [slug, name, clientId]);
+        "UPDATE clients SET slug=$1, name=$2, tracking_cadence=$3, updated_at=now() WHERE id=$4",
+        [slug, name, cadence, clientId]);
       if (!rowCount) throw new Error("Client not found");
     } else {
       const { rows } = await conn.query(
-        "INSERT INTO clients (slug, name) VALUES ($1,$2) RETURNING id", [slug, name]);
+        "INSERT INTO clients (slug, name, tracking_cadence) VALUES ($1,$2,$3) RETURNING id",
+        [slug, name, cadence]);
       clientId = rows[0].id;
     }
+
+    // External integration config (Emerging tab data sources).
+    await conn.query(
+      `INSERT INTO client_integrations
+         (client_id, tavily_enabled, profound_enabled, profound_org_id, profound_category, updated_at)
+       VALUES ($1,$2,$3,$4,$5,now())
+       ON CONFLICT (client_id) DO UPDATE SET
+         tavily_enabled=EXCLUDED.tavily_enabled, profound_enabled=EXCLUDED.profound_enabled,
+         profound_org_id=EXCLUDED.profound_org_id, profound_category=EXCLUDED.profound_category,
+         updated_at=now()`,
+      [clientId, integrations.tavily_enabled, integrations.profound_enabled,
+       integrations.profound_org_id || null, integrations.profound_category || null]);
 
     // Categories: upsert, keep ids stable (prompts reference them).
     const catIds = {};
