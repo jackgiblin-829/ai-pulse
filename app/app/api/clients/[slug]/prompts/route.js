@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { q } from "@/lib/db";
+import { requireApiSession } from "@/lib/auth";
 import { getClientBySlug } from "@/lib/queries";
 import { classifyForClient } from "@/lib/classifyPrompt";
 
@@ -15,6 +16,8 @@ async function ownPrompt(client, id) {
 // PUT { id, text? , active? } — text edits are allowed only before a
 // prompt has been measured (its text is the identity engines answered).
 export async function PUT(req, { params }) {
+  const { error } = await requireApiSession();
+  if (error) return error;
   const { slug } = await params;
   const client = await getClientBySlug(slug);
   if (!client) return NextResponse.json({ error: "unknown client" }, { status: 404 });
@@ -55,6 +58,8 @@ export async function PUT(req, { params }) {
 // DELETE { id } — only prompts that were never measured can be removed;
 // measured prompts anchor historical runs, so deactivate those instead.
 export async function DELETE(req, { params }) {
+  const { error } = await requireApiSession();
+  if (error) return error;
   const { slug } = await params;
   const client = await getClientBySlug(slug);
   if (!client) return NextResponse.json({ error: "unknown client" }, { status: 404 });
